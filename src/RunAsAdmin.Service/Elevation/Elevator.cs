@@ -251,10 +251,11 @@ public sealed class Elevator
     }
 
     /// <summary>SID des Benutzers der aktiven Sitzung (für Zeit-Admin). Robuste Ermittlung.</summary>
-    public static (SecurityIdentifier Sid, string Account, string Full)? GetActiveSessionUser()
+    public static (SecurityIdentifier Sid, string Account, string Full)? GetActiveSessionUser(Action<string>? onStep = null)
     {
-        EnablePrivilege(SE_TCB_NAME, _ => { });
-        if (!TryGetUserToken(_ => { }, out var token)) return null;
+        var step = onStep ?? (_ => { });
+        EnablePrivilege(SE_TCB_NAME, step);
+        if (!TryGetUserToken(step, out var token)) return null;
         try
         {
             var u = ResolveUser(token);

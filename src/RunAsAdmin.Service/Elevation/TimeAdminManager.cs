@@ -59,12 +59,20 @@ public sealed class TimeAdminManager : IDisposable
             if (_activeSid is not null)
                 return (false, $"Es läuft bereits eine Admin-Zeit (noch {RemainingSeconds / 60} Min).");
 
-            var user = Elevator.GetActiveSessionUser();
+            _log.Write("timeadmin.grant_begin", new { requestId });
+            var user = Elevator.GetActiveSessionUser(s => _log.Write("timeadmin.session_step", new { requestId, step = s }));
             if (user is null)
+            {
+                _log.Write("timeadmin.no_session", new { requestId });
                 return (false, "Keine aktive Benutzersitzung gefunden.");
+            }
+            _log.Write("timeadmin.session_ok", new { requestId, user = user.Value.Full });
 
             if (!Elevator.AddUserToAdministrators(user.Value.Sid, out var detail))
+            {
+                _log.Write("timeadmin.already_admin", new { requestId });
                 return (false, "Benutzer ist bereits Administrator – keine Zeit-Sitzung nötig.");
+            }
 
             _activeSid = user.Value.Sid;
             _activeAccount = user.Value.Account;
