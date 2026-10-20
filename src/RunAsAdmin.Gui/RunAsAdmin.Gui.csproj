@@ -14,8 +14,7 @@
     <AssemblyName>RunAsAdmin.Gui</AssemblyName>
     <RootNamespace>RunAsAdmin.Gui</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <!-- Version fuer die Update-Pruefung gegen GitHub-Releases (Tag z. B. v1.0.1). -->
-    <Version>1.0.6</Version>
+    <!-- Version kommt zentral aus Directory.Build.props. -->
   </PropertyGroup>
 
 </Project>
