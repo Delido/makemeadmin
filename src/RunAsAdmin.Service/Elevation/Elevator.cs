@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.DirectoryServices.AccountManagement;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -44,6 +45,10 @@ public sealed class Elevator
             var user = ResolveUser(userToken);
             samAccount = user.Account;
             onStep($"Angemeldeter Benutzer: {user.Full}");
+
+            // Sicherstellen: kein Impersonations-Rest auf dem Thread, bevor wir die
+            // Gruppe ändern (NetLocalGroup* läuft sonst evtl. nicht als SYSTEM).
+            RevertToSelf();
 
             // Kind kurz in die Administratorengruppe nehmen, damit das verknüpfte
             // (vollwertige) Token Admin-Rechte trägt.
@@ -342,9 +347,46 @@ public sealed class Elevator
                 // 2220 (GroupNotFound) -> nächsten Namen probieren, sonst abbrechen.
                 if (rc != 2220) break;
             }
-            throw new Win32Exception(lastRc, $"NetLocalGroupAddMembers fehlgeschlagen (Code {lastRc}, Namen: {triedNames}).");
+
+            // Fallback: Code 5 (Access Denied) o.ä. -> über 'net localgroup' per SID.
+            if (NetLocalGroupViaCmd(sid, add: true, out var cmdDetail))
+            {
+                detail = cmdDetail;
+                return true;
+            }
+            throw new Win32Exception(lastRc, $"NetLocalGroupAddMembers fehlgeschlagen (Code {lastRc}, Namen: {triedNames}). {cmdDetail}");
         }
         finally { Marshal.FreeHGlobal(pSid); }
+    }
+
+    /// <summary>
+    /// Fallback über das Kommandozeilen-Tool 'net localgroup' mit der SID.
+    /// Läuft als SYSTEM zuverlässig, auch wenn die native API Access Denied liefert.
+    /// </summary>
+    private static bool NetLocalGroupViaCmd(SecurityIdentifier sid, bool add, out string detail)
+    {
+        try
+        {
+            var groupSidArg = "*" + new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null).Value;
+            var memberArg = "*" + sid.Value;
+            var action = add ? "/add" : "/delete";
+            var psi = new ProcessStartInfo("net.exe", $"localgroup {groupSidArg} {memberArg} {action}")
+            {
+                CreateNoWindow = true, UseShellExecute = false,
+                RedirectStandardOutput = true, RedirectStandardError = true,
+            };
+            using var p = Process.Start(psi)!;
+            var err = p.StandardError.ReadToEnd();
+            p.WaitForExit(10000);
+            if (p.ExitCode == 0)
+            {
+                detail = add ? "Benutzer per 'net localgroup' aufgenommen." : "entfernt";
+                return true;
+            }
+            detail = $"'net localgroup' Exit {p.ExitCode}: {err.Trim()}";
+            return false;
+        }
+        catch (Exception ex) { detail = $"'net localgroup' Fehler: {ex.Message}"; return false; }
     }
 
     private static void RemoveFromAdministrators(SecurityIdentifier sid)
@@ -356,11 +398,15 @@ public sealed class Elevator
         {
             Marshal.Copy(bytes, 0, pSid, bytes.Length);
             var info = new LOCALGROUP_MEMBERS_INFO_0 { lgrmi0_sid = pSid };
+            var ok = false;
             foreach (var grp in AdminGroupNames())
             {
                 var rc = NetLocalGroupDelMembers(null, grp, 0, ref info, 1);
-                if (rc != 2220) break; // bei GroupNotFound nächsten Namen, sonst fertig
+                if (rc == NERR_Success || rc == ERROR_MEMBER_NOT_IN_ALIAS) { ok = true; break; }
+                if (rc != 2220) break;
             }
+            // Fallback über net localgroup, damit das Kind sicher wieder entfernt wird.
+            if (!ok) NetLocalGroupViaCmd(sid, add: false, out _);
         }
         finally { Marshal.FreeHGlobal(pSid); }
     }
