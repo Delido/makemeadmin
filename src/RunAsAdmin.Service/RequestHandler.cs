@@ -235,6 +235,7 @@ public sealed class RequestHandler
             };
         }
 
+        _log.Write("launch.begin", new { requestId, app.Name, app.Path });
         var launch = _elevator.LaunchElevated(app.Path, app.Arguments, null,
             step => _log.Write("launch.step", new { requestId, app.Name, step }));
 

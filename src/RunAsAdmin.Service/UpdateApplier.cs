@@ -31,16 +31,29 @@ public static class UpdateApplier
             // Erwartete Struktur im ZIP: service\, client\, gui\ (wie im publish-Ordner).
             // Batch kopiert diese Unterordner an ihre Zielorte.
             var bat = Path.Combine(staging, "apply.cmd");
+            // Dienst sicher beenden (sc stop + erzwungenes Kill + warten, bis die exe
+            // nicht mehr gesperrt ist), SONST ueberschreibt robocopy die Dienst-exe nicht
+            // und der alte Dienst laeuft weiter. /IS /IT erzwingt das Ueberschreiben.
             var script = $"""
                 @echo off
                 rem RunAsAdmin Update-Anwendung (von SYSTEM gestartet)
                 timeout /t 2 /nobreak >nul
                 sc stop RunAsAdmin >nul 2>&1
-                timeout /t 2 /nobreak >nul
                 taskkill /im RunAsAdmin.Gui.exe /f >nul 2>&1
-                if exist "{staging}\service" robocopy "{staging}\service" "{installRoot}" /E /NFL /NDL /NJH /NJS /NP >nul
-                if exist "{staging}\client"  robocopy "{staging}\client"  "{installRoot}\Client" /E /NFL /NDL /NJH /NJS /NP >nul
-                if exist "{staging}\gui"     robocopy "{staging}\gui"     "{installRoot}\Gui" /E /NFL /NDL /NJH /NJS /NP >nul
+                rem Warten bis der Dienst-Prozess wirklich weg ist (max ~20s)
+                set /a tries=0
+                :waitloop
+                tasklist /fi "imagename eq RunAsAdmin.Service.exe" | find /i "RunAsAdmin.Service.exe" >nul
+                if errorlevel 1 goto gone
+                taskkill /im RunAsAdmin.Service.exe /f >nul 2>&1
+                timeout /t 1 /nobreak >nul
+                set /a tries+=1
+                if %tries% lss 20 goto waitloop
+                :gone
+                timeout /t 1 /nobreak >nul
+                if exist "{staging}\service" robocopy "{staging}\service" "{installRoot}" /E /IS /IT /R:3 /W:1 /NFL /NDL /NJH /NJS /NP >nul
+                if exist "{staging}\client"  robocopy "{staging}\client"  "{installRoot}\Client" /E /IS /IT /R:3 /W:1 /NFL /NDL /NJH /NJS /NP >nul
+                if exist "{staging}\gui"     robocopy "{staging}\gui"     "{installRoot}\Gui" /E /IS /IT /R:3 /W:1 /NFL /NDL /NJH /NJS /NP >nul
                 sc start RunAsAdmin >nul 2>&1
                 rmdir /s /q "{staging}" >nul 2>&1
                 """;
