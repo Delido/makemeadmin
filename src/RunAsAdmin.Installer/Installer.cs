@@ -23,6 +23,16 @@ public sealed class Installer
     private string GuiExe => Path.Combine(GuiDir, "RunAsAdmin.Gui.exe");
     private const string ServiceName = "RunAsAdmin";
 
+    /// <summary>Ordner mit den zu installierenden Dateien: payload\ bevorzugt, sonst publish\.</summary>
+    private string PayloadDir
+    {
+        get
+        {
+            var payload = Path.Combine(_pkgRoot, "payload");
+            return Directory.Exists(payload) ? payload : Path.Combine(_pkgRoot, "publish");
+        }
+    }
+
     public Installer(string pkgRoot, TextWriter outWriter)
     {
         _pkgRoot = pkgRoot;
@@ -46,9 +56,9 @@ public sealed class Installer
 
     private void CopyFiles()
     {
-        var pubService = Path.Combine(_pkgRoot, "publish", "service");
-        var pubClient = Path.Combine(_pkgRoot, "publish", "client");
-        var pubGui = Path.Combine(_pkgRoot, "publish", "gui");
+        var pubService = Path.Combine(PayloadDir, "service");
+        var pubClient = Path.Combine(PayloadDir, "client");
+        var pubGui = Path.Combine(PayloadDir, "gui");
         if (!Directory.Exists(pubService))
             throw new DirectoryNotFoundException(
                 $"Programmdateien nicht gefunden: {pubService}\nBitte den KOMPLETTEN Paketordner kopieren.");
@@ -72,8 +82,10 @@ public sealed class Installer
             Step("Konfiguration bleibt erhalten (bereits vorhanden).");
             return;
         }
-        var src = Path.Combine(_pkgRoot, "config", "config.json");
-        if (!File.Exists(src)) throw new FileNotFoundException($"config.json fehlt: {src}");
+        // config liegt entweder in payload\config oder im Paketwurzel\config
+        var src = Path.Combine(PayloadDir, "config", "config.json");
+        if (!File.Exists(src)) src = Path.Combine(_pkgRoot, "config", "config.json");
+        if (!File.Exists(src)) throw new FileNotFoundException($"config.json fehlt (gesucht in payload\\config und config).");
         // BOM-frei kopieren (robust fürs Laden im Dienst).
         var json = File.ReadAllText(src);
         File.WriteAllText(ConfigDest, json, new System.Text.UTF8Encoding(false));
@@ -185,9 +197,17 @@ public sealed class Installer
         var dataDir = Path.Combine(pd, "RunAsAdmin");
 
         RunStatic("sc", "stop RunAsAdmin", true);
-        Thread.Sleep(800);
+        // Prozesse (Dienst + GUI) erzwungen beenden und auf Ende warten.
+        for (var i = 0; i < 30; i++)
+        {
+            var procs = Process.GetProcessesByName("RunAsAdmin.Service")
+                .Concat(Process.GetProcessesByName("RunAsAdmin.Gui")).ToArray();
+            if (procs.Length == 0) break;
+            foreach (var p in procs) { try { p.Kill(); p.WaitForExit(1000); } catch { } }
+            Thread.Sleep(500);
+        }
         RunStatic("sc", "delete RunAsAdmin", true);
-        foreach (var p in Process.GetProcessesByName("RunAsAdmin.Gui")) try { p.Kill(); } catch { }
+        Thread.Sleep(800);
 
         var sm = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu), "Programs");
         TryDelete(Path.Combine(sm, "Programme starten (RunAsAdmin).lnk"));
@@ -235,19 +255,66 @@ public sealed class Installer
     private void TryStopService()
     {
         Run("sc", $"stop {ServiceName}", ignoreError: true);
+
+        // GUI + Dienst-Prozess erzwungen beenden und auf echtes Ende warten –
+        // sonst bleibt RunAsAdmin.Service.exe gesperrt und wird nicht ersetzt.
+        for (var i = 0; i < 30; i++)
+        {
+            var procs = Process.GetProcessesByName("RunAsAdmin.Service")
+                .Concat(Process.GetProcessesByName("RunAsAdmin.Gui")).ToArray();
+            if (procs.Length == 0) break;
+            foreach (var p in procs)
+            {
+                try { p.Kill(); p.WaitForExit(1000); } catch { }
+            }
+            System.Threading.Thread.Sleep(500);
+        }
         System.Threading.Thread.Sleep(500);
-        foreach (var p in Process.GetProcessesByName("RunAsAdmin.Gui"))
-            try { p.Kill(); } catch { }
     }
 
-    private static void CopyDir(string src, string dst)
+    private void CopyDir(string src, string dst)
     {
         Directory.CreateDirectory(dst);
         foreach (var dir in Directory.GetDirectories(src, "*", SearchOption.AllDirectories))
             Directory.CreateDirectory(dir.Replace(src, dst));
         foreach (var file in Directory.GetFiles(src, "*", SearchOption.AllDirectories))
-            File.Copy(file, file.Replace(src, dst), overwrite: true);
+        {
+            var target = file.Replace(src, dst);
+            CopyFileRobust(file, target);
+        }
     }
+
+    /// <summary>
+    /// Kopiert eine Datei und umgeht eine gesperrte Zieldatei: Die alte Datei wird
+    /// umbenannt (das geht auch bei laufender Nutzung) und zum Löschen beim Neustart
+    /// vorgemerkt, dann die neue an ihren Platz geschrieben.
+    /// </summary>
+    private void CopyFileRobust(string source, string target)
+    {
+        try
+        {
+            File.Copy(source, target, overwrite: true);
+        }
+        catch (IOException)
+        {
+            try
+            {
+                var old = target + ".old-" + Guid.NewGuid().ToString("N")[..6];
+                File.Move(target, old);
+                try { MoveFileEx(old, null, MOVEFILE_DELAY_UNTIL_REBOOT); } catch { }
+                File.Copy(source, target, overwrite: true);
+                Step($"ersetzt (gesperrt, alte Datei beim Neustart entfernt): {Path.GetFileName(target)}");
+            }
+            catch (Exception ex)
+            {
+                Step($"WARNUNG: konnte nicht ersetzen: {Path.GetFileName(target)} ({ex.Message})");
+            }
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern bool MoveFileEx(string lpExistingFileName, string? lpNewFileName, int dwFlags);
+    private const int MOVEFILE_DELAY_UNTIL_REBOOT = 0x4;
 
     private void Run(string file, string args, bool ignoreError = false)
     {

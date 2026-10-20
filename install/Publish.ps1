@@ -19,6 +19,10 @@ $common = @("-c", $Configuration, "-r", "win-x64", "--self-contained", $sc)
 dotnet publish "$root\src\RunAsAdmin.Service" @common -o "$root\publish\service"
 dotnet publish "$root\src\RunAsAdmin.Client"  @common -o "$root\publish\client"
 dotnet publish "$root\src\RunAsAdmin.Gui"       @common -o "$root\publish\gui"
-dotnet publish "$root\src\RunAsAdmin.Installer" @common -o "$root\publish\installer"
+
+# Installer als EINZELNE exe (Single-File) – laeuft allein, ohne DLLs daneben.
+dotnet publish "$root\src\RunAsAdmin.Installer" @common `
+    -p:PublishSingleFile=true -p:IncludeAllContentForSelfExtract=true `
+    -o "$root\publish\installer"
 
 Write-Host "Veroeffentlicht nach $root\publish (self-contained=$sc)" -ForegroundColor Green

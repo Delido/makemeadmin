@@ -28,9 +28,12 @@ try
         return 0;
     }
 
-    // Paketordner: Verzeichnis der Setup-exe. Erwartet Unterordner publish\ und config\.
-    var exeDir = AppContext.BaseDirectory.TrimEnd('\\');
+    // Paketordner: der Ordner, in dem die Setup-EXE wirklich liegt. Bei Single-File
+    // ist AppContext.BaseDirectory ein Temp-Ordner – daher ProcessPath verwenden.
+    var exePath = Environment.ProcessPath ?? AppContext.BaseDirectory;
+    var exeDir = (Path.GetDirectoryName(exePath) ?? AppContext.BaseDirectory).TrimEnd('\\');
     var pkgRoot = FindPackageRoot(exeDir);
+    Console.WriteLine($"Setup-Ordner: {exeDir}");
     Console.WriteLine($"Paketordner: {pkgRoot}\n");
 
     var steps = new Installer(pkgRoot, Console.Out);
@@ -57,14 +60,15 @@ static bool IsAdmin()
 
 static string FindPackageRoot(string exeDir)
 {
-    // 1) exe liegt direkt im Paketwurzelordner (publish\ daneben)
-    if (Directory.Exists(Path.Combine(exeDir, "publish"))) return exeDir;
-    // 2) exe liegt in einem Unterordner (z. B. publish\installer) -> eine Ebene hoch
+    // Als Paket gilt ein Ordner, der "payload" ODER "publish" enthaelt.
+    bool HasPayload(string d) => Directory.Exists(Path.Combine(d, "payload"))
+                                 || Directory.Exists(Path.Combine(d, "publish"));
+
+    if (HasPayload(exeDir)) return exeDir;
     var up = Directory.GetParent(exeDir)?.FullName;
-    if (up is not null && Directory.Exists(Path.Combine(up, "publish"))) return up;
+    if (up is not null && HasPayload(up)) return up;
     var up2 = up is null ? null : Directory.GetParent(up)?.FullName;
-    if (up2 is not null && Directory.Exists(Path.Combine(up2, "publish"))) return up2;
-    // Fallback: exe-Ordner
+    if (up2 is not null && HasPayload(up2)) return up2;
     return exeDir;
 }
 
