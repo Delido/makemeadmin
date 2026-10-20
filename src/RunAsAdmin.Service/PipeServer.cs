@@ -139,7 +139,8 @@ public sealed class PipeServer
         }
         catch (Exception ex)
         {
-            _log.Write("pipe.handle_error", new { error = ex.Message });
+            _log.Write("pipe.handle_error", new { error = ex.Message, type = ex.GetType().Name,
+                stack = ex.StackTrace?.Split('\n').Take(3).ToArray() });
         }
         finally
         {
