@@ -170,6 +170,15 @@ public partial class MainWindow : Window
         _cts?.Cancel();
     }
 
+    private void TitleBar_Drag(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed) DragMove();
+    }
+
+    private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void CloseWindow_Click(object sender, RoutedEventArgs e) => Close(); // geht ins Tray
+
     private async void Update_Click(object sender, RoutedEventArgs e)
     {
         var current = System.Reflection.Assembly.GetExecutingAssembly()

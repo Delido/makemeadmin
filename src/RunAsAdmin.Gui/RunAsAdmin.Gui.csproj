@@ -14,7 +14,13 @@
     <AssemblyName>RunAsAdmin.Gui</AssemblyName>
     <RootNamespace>RunAsAdmin.Gui</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\..\assets\app.ico</ApplicationIcon>
     <!-- Version kommt zentral aus Directory.Build.props. -->
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Icon mit ausliefern, damit Tray/Fenster es laden koennen. -->
+    <Content Include="..\..\assets\app.ico" Link="app.ico" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 
 </Project>

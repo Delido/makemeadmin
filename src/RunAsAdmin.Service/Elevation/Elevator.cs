@@ -280,18 +280,34 @@ public sealed class Elevator
 
     // --- Gruppenverwaltung über System.DirectoryServices.AccountManagement ---
 
-    /// <summary>Lokalisierter Name der BUILTIN\Administratoren-Gruppe (z. B. "Administratoren").</summary>
-    private static string AdminGroupName()
+    /// <summary>
+    /// Kandidaten für den lokalen Admin-Gruppennamen. Zuerst der per SID aufgelöste
+    /// Name, dann die gängigen Varianten (DE/EN). NetLocalGroup* braucht den REINEN
+    /// Gruppennamen ohne "BUILTIN\"-Präfix.
+    /// </summary>
+    private static IEnumerable<string> AdminGroupNames()
     {
-        var adminSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
-        var bytes = new byte[adminSid.BinaryLength];
-        adminSid.GetBinaryForm(bytes, 0);
-        var name = new System.Text.StringBuilder(256);
-        var domain = new System.Text.StringBuilder(256);
-        int cchName = name.Capacity, cchDomain = domain.Capacity;
-        if (LookupAccountSid(null, bytes, name, ref cchName, domain, ref cchDomain, out _))
-            return name.ToString();
-        return "Administratoren"; // Fallback
+        string? resolved = null;
+        try
+        {
+            var adminSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+            var bytes = new byte[adminSid.BinaryLength];
+            adminSid.GetBinaryForm(bytes, 0);
+            var name = new System.Text.StringBuilder(256);
+            var domain = new System.Text.StringBuilder(256);
+            int cchName = name.Capacity, cchDomain = domain.Capacity;
+            if (LookupAccountSid(null, bytes, name, ref cchName, domain, ref cchDomain, out _))
+            {
+                resolved = name.ToString();
+                // Falls "BUILTIN\Administratoren" -> nur den Teil nach dem Backslash.
+                if (resolved.Contains('\\')) resolved = resolved[(resolved.IndexOf('\\') + 1)..];
+            }
+        }
+        catch { }
+
+        if (!string.IsNullOrWhiteSpace(resolved)) yield return resolved!;
+        yield return "Administratoren";
+        yield return "Administrators";
     }
 
     /// <summary>
@@ -307,18 +323,26 @@ public sealed class Elevator
         {
             Marshal.Copy(bytes, 0, pSid, bytes.Length);
             var info = new LOCALGROUP_MEMBERS_INFO_0 { lgrmi0_sid = pSid };
-            var rc = NetLocalGroupAddMembers(null, AdminGroupName(), 0, ref info, 1);
-            if (rc == NERR_Success)
+            int lastRc = -1; string? triedNames = null;
+            foreach (var grp in AdminGroupNames())
             {
-                detail = "Benutzer kurzzeitig in die Administratorengruppe aufgenommen.";
-                return true;
+                triedNames = (triedNames is null ? "" : triedNames + ", ") + grp;
+                var rc = NetLocalGroupAddMembers(null, grp, 0, ref info, 1);
+                lastRc = rc;
+                if (rc == NERR_Success)
+                {
+                    detail = $"Benutzer kurzzeitig in '{grp}' aufgenommen.";
+                    return true;
+                }
+                if (rc == ERROR_MEMBER_IN_ALIAS)
+                {
+                    detail = $"Benutzer ist bereits in '{grp}' — keine Änderung.";
+                    return false;
+                }
+                // 2220 (GroupNotFound) -> nächsten Namen probieren, sonst abbrechen.
+                if (rc != 2220) break;
             }
-            if (rc == ERROR_MEMBER_IN_ALIAS)
-            {
-                detail = "Benutzer ist bereits Administrator — keine Änderung.";
-                return false;
-            }
-            throw new Win32Exception(rc, $"NetLocalGroupAddMembers fehlgeschlagen (Code {rc}).");
+            throw new Win32Exception(lastRc, $"NetLocalGroupAddMembers fehlgeschlagen (Code {lastRc}, Namen: {triedNames}).");
         }
         finally { Marshal.FreeHGlobal(pSid); }
     }
@@ -332,7 +356,11 @@ public sealed class Elevator
         {
             Marshal.Copy(bytes, 0, pSid, bytes.Length);
             var info = new LOCALGROUP_MEMBERS_INFO_0 { lgrmi0_sid = pSid };
-            NetLocalGroupDelMembers(null, AdminGroupName(), 0, ref info, 1);
+            foreach (var grp in AdminGroupNames())
+            {
+                var rc = NetLocalGroupDelMembers(null, grp, 0, ref info, 1);
+                if (rc != 2220) break; // bei GroupNotFound nächsten Namen, sonst fertig
+            }
         }
         finally { Marshal.FreeHGlobal(pSid); }
     }

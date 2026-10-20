@@ -74,14 +74,19 @@ public sealed class Worker : BackgroundService
     {
         try
         {
-            if (System.Diagnostics.Process.GetProcessesByName("RunAsAdmin.Gui").Length > 0) return;
-
             // GUI liegt neben dem Dienst: ...\RunAsAdmin\Gui\RunAsAdmin.Gui.exe
             var serviceDir = Path.GetDirectoryName(Environment.ProcessPath) ?? "";
             var guiExe = Path.Combine(serviceDir, "Gui", "RunAsAdmin.Gui.exe");
             if (!File.Exists(guiExe)) { log.Write("gui.autostart_skip", new { reason = "exe fehlt", guiExe }); return; }
 
-            // Kurz warten, bis die Benutzersitzung nach einem Neustart bereit ist.
+            // Evtl. hängende/alte GUI-Instanz beenden, dann frisch im Tray starten.
+            // (Nach einem Update koennte eine alte GUI ohne sichtbares Tray laufen.)
+            foreach (var p in System.Diagnostics.Process.GetProcessesByName("RunAsAdmin.Gui"))
+            {
+                try { p.Kill(); p.WaitForExit(2000); } catch { }
+            }
+
+            // Kurz warten, bis die Benutzersitzung bereit ist.
             Thread.Sleep(3000);
             var r = new Elevation.Elevator().LaunchInUserSession(guiExe, "/tray",
                 step => log.Write("gui.autostart_step", new { step }));
