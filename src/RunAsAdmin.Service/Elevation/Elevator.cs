@@ -66,7 +66,7 @@ public sealed class Elevator
                 using (linked)
                 {
                     if (addedToGroup) { RemoveFromAdministrators(user.Sid); addedToGroup = false; onStep("Gruppe wieder entzogen."); }
-                    pid = StartProcessWithToken(linked.Token, exePath, arguments, workingDir);
+                    pid = StartProcessWithToken(linked.Token, exePath, arguments, workingDir, onStep);
                 }
                 onStep("Erhöht gestartet (verknüpftes Token).");
             }
@@ -77,7 +77,7 @@ public sealed class Elevator
                 // Adminrechte braucht, kommt der UAC-Dialog, den das Kind jetzt
                 // bestätigen kann. Der zeitgesteuerte Entzug erfolgt extern.
                 using var primary = DuplicateToPrimary(userToken);
-                pid = StartProcessWithToken(primary.Token, exePath, arguments, workingDir);
+                pid = StartProcessWithToken(primary.Token, exePath, arguments, workingDir, onStep);
                 addedToGroup = false; // bewusst NICHT hier entziehen – bleibt Admin
                 onStep("Gestartet; Konto bleibt kurz Administrator (MakeMeAdmin).");
 
@@ -127,7 +127,7 @@ public sealed class Elevator
                 return new(false, 0, $"DuplicateTokenEx fehlgeschlagen: {Marshal.GetLastPInvokeError()}");
             try
             {
-                var pid = StartProcessWithToken(primary, exePath, arguments, null);
+                var pid = StartProcessWithToken(primary, exePath, arguments, null, onStep);
                 return new(true, pid, "In Benutzersitzung gestartet.");
             }
             finally { CloseHandle(primary); }
@@ -275,6 +275,10 @@ public sealed class Elevator
 
     private static int StartProcessWithToken(IntPtr primaryToken, string exePath, string? arguments,
         string? workingDir)
+        => StartProcessWithToken(primaryToken, exePath, arguments, workingDir, _ => { });
+
+    private static int StartProcessWithToken(IntPtr primaryToken, string exePath, string? arguments,
+        string? workingDir, Action<string> onStep)
     {
         // Session-ID des Tokens auf die aktive Konsolensitzung setzen, damit der
         // Prozess in der SICHTBAREN Sitzung startet (sonst Session 0 -> unsichtbar
@@ -309,6 +313,17 @@ public sealed class Elevator
                     CREATE_UNICODE_ENVIRONMENT | NORMAL_PRIORITY_CLASS,
                     env, dir, ref si, out var pi))
                 throw new Win32Exception(Marshal.GetLastPInvokeError(), "CreateProcessAsUser fehlgeschlagen.");
+
+            // Prüfen, ob der Prozess nach kurzer Zeit noch lebt (Diagnose: stirbt er sofort?).
+            try
+            {
+                using var proc = System.Diagnostics.Process.GetProcessById(pi.dwProcessId);
+                if (proc.WaitForExit(1500))
+                    onStep($"Prozess {pi.dwProcessId} sofort beendet, ExitCode {proc.ExitCode}.");
+                else
+                    onStep($"Prozess {pi.dwProcessId} läuft noch nach 1,5s.");
+            }
+            catch (Exception ex) { onStep($"Prozess-Check: {ex.Message}"); }
 
             CloseHandle(pi.hThread);
             CloseHandle(pi.hProcess);

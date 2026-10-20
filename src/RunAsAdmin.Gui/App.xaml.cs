@@ -31,8 +31,8 @@ public partial class App : System.Windows.Application
 
         _tray = new WinForms.NotifyIcon
         {
-            Text = "RunAsAdmin – Programme starten",
-            Icon = LoadIcon(),
+            Text = "RunAsAdmin – keine Adminrechte aktiv",
+            Icon = LoadIcon(active: false),
             Visible = true,
         };
         _tray.DoubleClick += (_, _) => ShowWindow();
@@ -44,10 +44,38 @@ public partial class App : System.Windows.Application
         menu.Items.Add("Beenden", null, (_, _) => ExitApp());
         _tray.ContextMenuStrip = menu;
 
+        // Admin-Status regelmäßig abfragen und Tray-Icon/Tooltip anpassen.
+        StartStatusPolling();
+
         // Beim Start: nur ins Tray, wenn mit /tray gestartet (z. B. Autostart),
         // sonst Fenster direkt zeigen.
         if (!e.Args.Contains("/tray"))
             ShowWindow();
+    }
+
+    private System.Windows.Threading.DispatcherTimer? _statusTimer;
+    private bool _lastActive;
+
+    private void StartStatusPolling()
+    {
+        _statusTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(5),
+        };
+        _statusTimer.Tick += async (_, _) =>
+        {
+            bool active = false;
+            try { active = (await RunAsAdmin.Shared.PipeClient.TimeStatusAsync()).Active; } catch { }
+            if (active != _lastActive && _tray is not null)
+            {
+                _lastActive = active;
+                _tray.Icon = LoadIcon(active);
+                _tray.Text = active
+                    ? "RunAsAdmin – ADMINRECHTE AKTIV"
+                    : "RunAsAdmin – keine Adminrechte aktiv";
+            }
+        };
+        _statusTimer.Start();
     }
 
     private void ShowSettings()
@@ -82,15 +110,34 @@ public partial class App : System.Windows.Application
         Shutdown();
     }
 
-    private static Icon LoadIcon()
+    private static Icon LoadIcon(bool active)
     {
-        // Eigenes Icon optional unter "app.ico" – sonst System-Schild-Icon.
+        // Aktiv: rotes Warnschild (Adminrechte an). Inaktiv: normales app.ico.
         try
         {
+            if (active) return BuildStatusIcon(System.Drawing.Color.FromArgb(220, 60, 50));
             var path = Path.Combine(AppContext.BaseDirectory, "app.ico");
             if (File.Exists(path)) return new Icon(path);
+            return BuildStatusIcon(System.Drawing.Color.FromArgb(42, 91, 215));
         }
-        catch { /* Fallback unten */ }
-        return SystemIcons.Shield;
+        catch { return SystemIcons.Shield; }
+    }
+
+    /// <summary>Zeichnet ein einfaches rundes Schild-Icon in der gewünschten Farbe.</summary>
+    private static Icon BuildStatusIcon(System.Drawing.Color color)
+    {
+        using var bmp = new System.Drawing.Bitmap(32, 32);
+        using var g = System.Drawing.Graphics.FromImage(bmp);
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.Clear(System.Drawing.Color.Transparent);
+        using var brush = new System.Drawing.SolidBrush(color);
+        g.FillEllipse(brush, 2, 2, 28, 28);
+        using var pen = new System.Drawing.Pen(System.Drawing.Color.White, 3)
+        { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+        g.DrawLines(pen, new[]
+        {
+            new System.Drawing.Point(10, 17), new System.Drawing.Point(14, 22), new System.Drawing.Point(23, 11),
+        });
+        return Icon.FromHandle(bmp.GetHicon());
     }
 }
