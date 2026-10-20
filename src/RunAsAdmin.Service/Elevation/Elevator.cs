@@ -50,24 +50,47 @@ public sealed class Elevator
             // Gruppe ändern (NetLocalGroup* läuft sonst evtl. nicht als SYSTEM).
             RevertToSelf();
 
-            // Kind kurz in die Administratorengruppe nehmen, damit das verknüpfte
-            // (vollwertige) Token Admin-Rechte trägt.
-            addedToGroup = AddToAdministrators(user.Sid, out var groupDetail);
+            // Versuch: verknüpftes (voll erhöhtes) Token – nur bei UAC-Admins mit
+            // Split-Token. Reine Standardbenutzer haben keines (MakeMeAdmin-Weg unten).
+            SafeToken? linked = null;
+            var wasAdded = AddToAdministrators(user.Sid, out var groupDetail);
+            addedToGroup = wasAdded;
             onStep(groupDetail);
+            try { linked = GetLinkedElevatedToken(userToken); }
+            catch { linked = null; }
 
-            using var linked = GetLinkedElevatedToken(userToken);
-
-            // Gruppenmitgliedschaft wird sofort wieder entzogen. Das bereits
-            // geholte Token bleibt für den zu startenden Prozess gültig.
-            if (addedToGroup)
+            int pid;
+            if (linked is not null)
             {
-                RemoveFromAdministrators(user.Sid);
-                addedToGroup = false;
-                onStep("Benutzer wieder aus der Administratorengruppe entfernt.");
+                // Split-Token-Admin: erhöht starten, Gruppe sofort wieder entziehen.
+                using (linked)
+                {
+                    if (addedToGroup) { RemoveFromAdministrators(user.Sid); addedToGroup = false; onStep("Gruppe wieder entzogen."); }
+                    pid = StartProcessWithToken(linked.Token, exePath, arguments, workingDir);
+                }
+                onStep("Erhöht gestartet (verknüpftes Token).");
             }
+            else
+            {
+                // Standardbenutzer (MakeMeAdmin-Prinzip): Das Kind BLEIBT für die
+                // Admin-Zeit in der Gruppe. Das Programm startet normal; wenn es
+                // Adminrechte braucht, kommt der UAC-Dialog, den das Kind jetzt
+                // bestätigen kann. Der zeitgesteuerte Entzug erfolgt extern.
+                using var primary = DuplicateToPrimary(userToken);
+                pid = StartProcessWithToken(primary.Token, exePath, arguments, workingDir);
+                addedToGroup = false; // bewusst NICHT hier entziehen – bleibt Admin
+                onStep("Gestartet; Konto bleibt kurz Administrator (MakeMeAdmin).");
 
-            var pid = StartProcessWithToken(linked.Token, exePath, arguments, workingDir);
-            return new(true, pid, "Prozess erhöht gestartet.");
+                // Automatische Rückstufung nach 10 Minuten (genug Zeit, damit Spiel +
+                // Anti-Cheat-Dienst sich einrichten; danach ist das Kind wieder normal).
+                var sidToRemove = user.Sid;
+                System.Threading.Tasks.Task.Run(() =>
+                {
+                    System.Threading.Thread.Sleep(TimeSpan.FromMinutes(10));
+                    try { RemoveFromAdministrators(sidToRemove); } catch { }
+                });
+            }
+            return new(true, pid, "Prozess gestartet.");
         }
         catch (Exception ex)
         {
@@ -200,6 +223,17 @@ public sealed class Elevator
         var full = id.Name; // DOMAIN\user oder PC\user
         var account = full.Contains('\\') ? full[(full.IndexOf('\\') + 1)..] : full;
         return new(sid, account, full);
+    }
+
+    /// <summary>Dupliziert ein Token zu einem Primär-Token für CreateProcessAsUser.</summary>
+    private static SafeToken DuplicateToPrimary(IntPtr token)
+    {
+        const uint access = TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY
+                            | TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID;
+        if (!DuplicateTokenEx(token, access, IntPtr.Zero,
+                SECURITY_IMPERSONATION_LEVEL.Impersonation, TOKEN_TYPE.TokenPrimary, out var primary))
+            throw new Win32Exception(Marshal.GetLastPInvokeError(), "DuplicateTokenEx (Session-Token) fehlgeschlagen.");
+        return new SafeToken(primary);
     }
 
     /// <summary>Holt das verknüpfte, nicht gefilterte Token (mit Admin-Rechten).</summary>
