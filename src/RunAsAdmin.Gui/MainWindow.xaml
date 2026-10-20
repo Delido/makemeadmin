@@ -193,6 +193,9 @@
                         <ProgressBar x:Name="OverlayBar" IsIndeterminate="True" Height="5"
                                      Margin="0,22,0,0" Background="#2A2D38" Foreground="#4CC26A"
                                      BorderThickness="0"/>
+                        <Button x:Name="OverlayCancel" Content="Abbrechen" Click="OverlayCancel_Click"
+                                Style="{StaticResource CloseBtn}" Visibility="Collapsed"
+                                Margin="0,24,0,0" HorizontalAlignment="Center"/>
                         <Button x:Name="OverlayClose" Content="Schließen" Click="OverlayClose_Click"
                                 Style="{StaticResource CloseBtn}" Visibility="Collapsed"
                                 Margin="0,24,0,0" HorizontalAlignment="Center"/>

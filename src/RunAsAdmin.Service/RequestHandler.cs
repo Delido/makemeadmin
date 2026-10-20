@@ -76,7 +76,7 @@ public sealed class RequestHandler
             Path = "(Zeit-Admin)",
             Reason = reason,
             Secret = _cfg.HomeAssistant.CallbackSecret,
-            CallbackUrl = $"http://{Environment.MachineName}:{_cfg.HomeAssistant.CallbackPort}/decision/",
+            CallbackUrl = CallbackUrl(),
         };
         var result = await _approver.AskAsync(ask, _cfg.ApprovalTimeoutSeconds, ct);
 
@@ -188,7 +188,7 @@ public sealed class RequestHandler
                 Path = app.Path,
                 Reason = req.Reason ?? app.Reason,
                 Secret = _cfg.HomeAssistant.CallbackSecret,
-                CallbackUrl = $"http://{Environment.MachineName}:{_cfg.HomeAssistant.CallbackPort}/decision/",
+                CallbackUrl = CallbackUrl(),
                 AllowPersist = isAdhoc,   // "Immer erlauben" nur für neue Programme anbieten
             };
             var result = await _approver.AskAsync(ask, _cfg.ApprovalTimeoutSeconds, ct);
@@ -254,6 +254,34 @@ public sealed class RequestHandler
             State = RequestState.Approved, Decision = decision,
             Message = $"{app.Name} wurde gestartet.",
         };
+    }
+
+    private string? _cachedCallbackHost;
+
+    /// <summary>
+    /// Adresse, unter der HA den Rückkanal erreicht. Bevorzugt die lokale LAN-IP
+    /// (Hostnamen-Auflösung von HA aus ist oft nicht gegeben), Fallback Hostname.
+    /// </summary>
+    private string CallbackUrl()
+    {
+        _cachedCallbackHost ??= ResolveLocalIp() ?? Environment.MachineName;
+        return $"http://{_cachedCallbackHost}:{_cfg.HomeAssistant.CallbackPort}/decision/";
+    }
+
+    private static string? ResolveLocalIp()
+    {
+        try
+        {
+            // Die IP ermitteln, über die ausgehende Verbindungen laufen (ohne zu senden).
+            using var socket = new System.Net.Sockets.Socket(
+                System.Net.Sockets.AddressFamily.InterNetwork,
+                System.Net.Sockets.SocketType.Dgram, 0);
+            socket.Connect("8.8.8.8", 65530);
+            if (socket.LocalEndPoint is System.Net.IPEndPoint ep)
+                return ep.Address.ToString();
+        }
+        catch { }
+        return null;
     }
 
     /// <summary>Herausgeber aus der Signatur lesen; null, wenn unsigniert/ungültig.</summary>

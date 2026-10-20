@@ -106,16 +106,23 @@ public partial class MainWindow : Window
         catch { /* Status ist optional */ }
     }
 
+    private CancellationTokenSource? _cts;
+
     private async void Tile_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not TileButton btn || btn.Tag is not AppInfo app) return;
 
+        _cts = new CancellationTokenSource();
         ShowWaiting(app);
         try
         {
-            var resp = await PipeClient.RunAsync(app.Name);
+            var resp = await PipeClient.RunAsync(app.Name, ct: _cts.Token);
             var ok = resp.State == RequestState.Approved;
             ShowResult(ok, ok ? "Los geht's!" : TitleFor(resp), resp.Message);
+        }
+        catch (OperationCanceledException)
+        {
+            ShowResult(false, "Abgebrochen", "Du hast die Anfrage abgebrochen.");
         }
         catch (Exception ex)
         {
@@ -135,9 +142,10 @@ public partial class MainWindow : Window
     {
         OverlayIcon.Text = app.AutoApprove ? "🚀" : "⏳";
         OverlayTitle.Text = app.AutoApprove ? $"{app.Name} wird gestartet…" : "Warte auf Freigabe von Papa…";
-        OverlayText.Text = app.AutoApprove ? "" : "Du bekommst gleich Bescheid.";
+        OverlayText.Text = app.AutoApprove ? "" : "Du bekommst gleich Bescheid. Das kann bis zu 2 Minuten dauern.";
         OverlayBar.Visibility = Visibility.Visible;
         OverlayClose.Visibility = Visibility.Collapsed;
+        OverlayCancel.Visibility = app.AutoApprove ? Visibility.Collapsed : Visibility.Visible;
         Overlay.Visibility = Visibility.Visible;
     }
 
@@ -147,6 +155,7 @@ public partial class MainWindow : Window
         OverlayTitle.Text = title;
         OverlayText.Text = text;
         OverlayBar.Visibility = Visibility.Collapsed;
+        OverlayCancel.Visibility = Visibility.Collapsed;
         OverlayClose.Visibility = Visibility.Visible;
         Overlay.Visibility = Visibility.Visible;
     }
@@ -154,6 +163,11 @@ public partial class MainWindow : Window
     private void OverlayClose_Click(object sender, RoutedEventArgs e)
     {
         Overlay.Visibility = Visibility.Collapsed;
+    }
+
+    private void OverlayCancel_Click(object sender, RoutedEventArgs e)
+    {
+        _cts?.Cancel();
     }
 
     private async void Update_Click(object sender, RoutedEventArgs e)

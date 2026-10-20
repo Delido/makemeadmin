@@ -51,22 +51,29 @@ public sealed class HomeAssistantApprover : IAsyncDisposable
                     var body = await reader.ReadToEndAsync(ct);
                     var decision = AppConfig.Deserialize<ApprovalDecision>(body);
 
-                    if (decision is null
-                        || !string.Equals(decision.Secret, _cfg.CallbackSecret, StringComparison.Ordinal))
+                    if (decision is null)
                     {
+                        _log.Write("decision.received", new { ok = false, reason = "kein/ungültiges JSON" });
+                        ctx.Response.StatusCode = (int)HttpStatusCode.BadRequest;
+                    }
+                    else if (!string.Equals(decision.Secret, _cfg.CallbackSecret, StringComparison.Ordinal))
+                    {
+                        _log.Write("decision.received", new { ok = false, reason = "Secret passt nicht", decision.RequestId });
                         ctx.Response.StatusCode = (int)HttpStatusCode.Forbidden;
                     }
                     else if (_pending.TryRemove(decision.RequestId, out var tcs))
                     {
+                        _log.Write("decision.received", new { ok = true, decision.RequestId, decision.Approved, decision.Persist });
                         tcs.TrySetResult(decision);
                         ctx.Response.StatusCode = (int)HttpStatusCode.OK;
                     }
                     else
                     {
+                        _log.Write("decision.received", new { ok = false, reason = "Anfrage unbekannt/abgelaufen", decision.RequestId });
                         ctx.Response.StatusCode = (int)HttpStatusCode.NotFound;
                     }
                 }
-                catch { ctx.Response.StatusCode = (int)HttpStatusCode.BadRequest; }
+                catch (Exception ex) { _log.Write("decision.error", new { error = ex.Message }); ctx.Response.StatusCode = (int)HttpStatusCode.BadRequest; }
                 finally { ctx.Response.Close(); }
             }, ct);
         }
@@ -81,7 +88,11 @@ public sealed class HomeAssistantApprover : IAsyncDisposable
         var url = $"{_cfg.BaseUrl.TrimEnd('/')}/api/webhook/{_cfg.RequestWebhookId}";
         try
         {
-            var resp = await _http.PostAsJsonAsync(url, ask, ct);
+            // WICHTIG: PascalCase beibehalten (HA-Automation liest req.User, req.AppName …).
+            // Ohne eigene Optionen würde PostAsJsonAsync camelCase senden -> leere Felder.
+            var json = AppConfig.SerializeCompact(ask);
+            using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            var resp = await _http.PostAsync(url, content, ct);
             _log.Write("approval.asked", new { ask.RequestId, ask.AppName, status = (int)resp.StatusCode });
         }
         catch (Exception ex)

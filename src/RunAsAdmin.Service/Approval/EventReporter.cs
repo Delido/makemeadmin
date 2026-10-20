@@ -16,6 +16,8 @@ public sealed class EventReporter : IDisposable
     {
         "launch.success", "request.denied", "request.persisted",
         "timeadmin.granted", "timeadmin.revoked",
+        // Diagnose: ob der Rückkanal-Listener startet und Entscheidungen ankommen.
+        "service.ha_listener_failed", "decision.received",
     };
 
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(8) };
