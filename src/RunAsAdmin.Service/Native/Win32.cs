@@ -164,11 +164,11 @@ internal static partial class Win32
     [StructLayout(LayoutKind.Sequential)]
     internal struct LOCALGROUP_MEMBERS_INFO_0 { public IntPtr lgrmi0_sid; }
 
-    [DllImport("netapi32.dll")]
+    [DllImport("netapi32.dll", CharSet = CharSet.Unicode)]
     internal static extern int NetLocalGroupAddMembers(string? servername, string groupname,
         int level, ref LOCALGROUP_MEMBERS_INFO_0 buf, int totalentries);
 
-    [DllImport("netapi32.dll")]
+    [DllImport("netapi32.dll", CharSet = CharSet.Unicode)]
     internal static extern int NetLocalGroupDelMembers(string? servername, string groupname,
         int level, ref LOCALGROUP_MEMBERS_INFO_0 buf, int totalentries);
 
