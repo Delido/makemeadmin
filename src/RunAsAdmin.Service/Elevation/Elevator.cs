@@ -280,51 +280,66 @@ public sealed class Elevator
 
     // --- Gruppenverwaltung über System.DirectoryServices.AccountManagement ---
 
+    /// <summary>Lokalisierter Name der BUILTIN\Administratoren-Gruppe (z. B. "Administratoren").</summary>
+    private static string AdminGroupName()
+    {
+        var adminSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+        var bytes = new byte[adminSid.BinaryLength];
+        adminSid.GetBinaryForm(bytes, 0);
+        var name = new System.Text.StringBuilder(256);
+        var domain = new System.Text.StringBuilder(256);
+        int cchName = name.Capacity, cchDomain = domain.Capacity;
+        if (LookupAccountSid(null, bytes, name, ref cchName, domain, ref cchDomain, out _))
+            return name.ToString();
+        return "Administratoren"; // Fallback
+    }
+
+    /// <summary>
+    /// Nimmt den Benutzer (per SID) nativ in die lokale Admin-Gruppe auf.
+    /// Robust auch bei Microsoft-Konten (im Gegensatz zu AccountManagement).
+    /// </summary>
     private static bool AddToAdministrators(SecurityIdentifier sid, out string detail)
     {
-        using var ctx = new PrincipalContext(ContextType.Machine);
-        var adminSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
-        using var admins = GroupPrincipal.FindByIdentity(ctx, IdentityType.Sid, adminSid.Value)
-            ?? throw new InvalidOperationException("Administratorengruppe nicht gefunden.");
-
-        if (admins.Members.Any(m => m.Sid == sid))
+        var bytes = new byte[sid.BinaryLength];
+        sid.GetBinaryForm(bytes, 0);
+        var pSid = Marshal.AllocHGlobal(bytes.Length);
+        try
         {
-            detail = "Benutzer ist bereits Administrator — keine Änderung.";
-            return false;
+            Marshal.Copy(bytes, 0, pSid, bytes.Length);
+            var info = new LOCALGROUP_MEMBERS_INFO_0 { lgrmi0_sid = pSid };
+            var rc = NetLocalGroupAddMembers(null, AdminGroupName(), 0, ref info, 1);
+            if (rc == NERR_Success)
+            {
+                detail = "Benutzer kurzzeitig in die Administratorengruppe aufgenommen.";
+                return true;
+            }
+            if (rc == ERROR_MEMBER_IN_ALIAS)
+            {
+                detail = "Benutzer ist bereits Administrator — keine Änderung.";
+                return false;
+            }
+            throw new Win32Exception(rc, $"NetLocalGroupAddMembers fehlgeschlagen (Code {rc}).");
         }
-        admins.Members.Add(ctx, IdentityType.Sid, sid.Value);
-        admins.Save();
-        detail = "Benutzer kurzzeitig in die Administratorengruppe aufgenommen.";
-        return true;
+        finally { Marshal.FreeHGlobal(pSid); }
     }
 
     private static void RemoveFromAdministrators(SecurityIdentifier sid)
     {
-        using var ctx = new PrincipalContext(ContextType.Machine);
-        var adminSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
-        using var admins = GroupPrincipal.FindByIdentity(ctx, IdentityType.Sid, adminSid.Value);
-        if (admins is null) return;
-        var member = admins.Members.FirstOrDefault(m => m.Sid == sid);
-        if (member is not null)
+        var bytes = new byte[sid.BinaryLength];
+        sid.GetBinaryForm(bytes, 0);
+        var pSid = Marshal.AllocHGlobal(bytes.Length);
+        try
         {
-            admins.Members.Remove(member);
-            admins.Save();
+            Marshal.Copy(bytes, 0, pSid, bytes.Length);
+            var info = new LOCALGROUP_MEMBERS_INFO_0 { lgrmi0_sid = pSid };
+            NetLocalGroupDelMembers(null, AdminGroupName(), 0, ref info, 1);
         }
+        finally { Marshal.FreeHGlobal(pSid); }
     }
 
     private static void RemoveFromAdministratorsByAccount(string account)
     {
-        using var ctx = new PrincipalContext(ContextType.Machine);
-        var adminSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
-        using var admins = GroupPrincipal.FindByIdentity(ctx, IdentityType.Sid, adminSid.Value);
-        if (admins is null) return;
-        var member = admins.Members.FirstOrDefault(m =>
-            string.Equals(m.SamAccountName, account, StringComparison.OrdinalIgnoreCase));
-        if (member is not null)
-        {
-            admins.Members.Remove(member);
-            admins.Save();
-        }
+        // Nicht mehr benötigt – Entfernung erfolgt per SID. Als No-Op belassen.
     }
 
     private sealed class SafeToken(IntPtr token) : IDisposable

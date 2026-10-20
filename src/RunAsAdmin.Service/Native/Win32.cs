@@ -159,4 +159,31 @@ internal static partial class Win32
     [LibraryImport("advapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool RevertToSelf();
+
+    // --- Lokale Gruppen über native netapi32 (robust auch bei Microsoft-Konten) ---
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct LOCALGROUP_MEMBERS_INFO_0 { public IntPtr lgrmi0_sid; }
+
+    [DllImport("netapi32.dll")]
+    internal static extern int NetLocalGroupAddMembers(string? servername, string groupname,
+        int level, ref LOCALGROUP_MEMBERS_INFO_0 buf, int totalentries);
+
+    [DllImport("netapi32.dll")]
+    internal static extern int NetLocalGroupDelMembers(string? servername, string groupname,
+        int level, ref LOCALGROUP_MEMBERS_INFO_0 buf, int totalentries);
+
+    // Rückgabewerte
+    internal const int NERR_Success = 0;
+    internal const int ERROR_MEMBER_IN_ALIAS = 1378; // schon Mitglied
+    internal const int ERROR_NO_SUCH_MEMBER = 1387;
+    internal const int ERROR_MEMBER_NOT_IN_ALIAS = 1377;
+
+    internal enum SID_NAME_USE { User = 1, Group, Domain, Alias, WellKnownGroup, DeletedAccount, Invalid, Unknown, Computer, Label }
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool LookupAccountSid(string? systemName, byte[] sid,
+        System.Text.StringBuilder name, ref int cchName,
+        System.Text.StringBuilder referencedDomainName, ref int cchReferencedDomainName,
+        out SID_NAME_USE use);
 }
