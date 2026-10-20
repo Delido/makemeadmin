@@ -280,12 +280,23 @@ public sealed class Elevator
             throw new Win32Exception(Marshal.GetLastPInvokeError(), "CreateEnvironmentBlock fehlgeschlagen.");
         try
         {
-            var si = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>(), lpDesktop = @"winsta0\default" };
+            // wShowWindow=SW_SHOW, damit das Fenster sichtbar erscheint.
+            const int STARTF_USESHOWWINDOW = 0x00000001;
+            const short SW_SHOW = 5;
+            var si = new STARTUPINFO
+            {
+                cb = Marshal.SizeOf<STARTUPINFO>(),
+                lpDesktop = @"winsta0\default",
+                dwFlags = STARTF_USESHOWWINDOW,
+                wShowWindow = SW_SHOW,
+            };
             var cmd = string.IsNullOrWhiteSpace(arguments) ? $"\"{exePath}\"" : $"\"{exePath}\" {arguments}";
             var dir = workingDir ?? Path.GetDirectoryName(exePath);
 
+            // KEIN CREATE_NEW_CONSOLE (macht GUI-Programme unsichtbar / zeigt leere
+            // Konsole). Stattdessen normaler Fensterstart in der Benutzersitzung.
             if (!CreateProcessAsUser(primaryToken, null, cmd, IntPtr.Zero, IntPtr.Zero, false,
-                    CREATE_UNICODE_ENVIRONMENT | NORMAL_PRIORITY_CLASS | CREATE_NEW_CONSOLE,
+                    CREATE_UNICODE_ENVIRONMENT | NORMAL_PRIORITY_CLASS,
                     env, dir, ref si, out var pi))
                 throw new Win32Exception(Marshal.GetLastPInvokeError(), "CreateProcessAsUser fehlgeschlagen.");
 
