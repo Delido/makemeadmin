@@ -154,4 +154,9 @@ internal static partial class Win32
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool CloseHandle(IntPtr hObject);
+
+    /// <summary>Beendet eine Impersonation auf dem aktuellen Thread (zurück zu SYSTEM).</summary>
+    [LibraryImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool RevertToSelf();
 }

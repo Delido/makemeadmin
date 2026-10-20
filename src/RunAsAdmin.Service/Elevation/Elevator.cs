@@ -25,6 +25,11 @@ public sealed class Elevator
     public LaunchResult LaunchElevated(string exePath, string? arguments, string? workingDir,
         Action<string> onStep)
     {
+        // Sicherstellen, dass der Thread NICHT mehr das Kind imitiert (nach der
+        // Pipe-Impersonation). Sonst nutzt WTSQueryUserToken das Kind-Token (ohne
+        // SeTcbPrivilege) und scheitert -> "Keine Sitzung mit Token".
+        RevertToSelf();
+
         // SeTcbPrivilege aktivieren – WTSQueryUserToken benötigt es aktiviert.
         // LocalSystem besitzt es, aber es ist nicht automatisch im Token eingeschaltet.
         EnablePrivilege(SE_TCB_NAME, onStep);
@@ -79,6 +84,7 @@ public sealed class Elevator
     /// </summary>
     public LaunchResult LaunchInUserSession(string exePath, string? arguments, Action<string> onStep)
     {
+        RevertToSelf();
         EnablePrivilege(SE_TCB_NAME, onStep);
         if (!TryGetUserToken(onStep, out var userToken))
             return new(false, 0, "Keine aktive Benutzersitzung mit Token gefunden.");
@@ -255,6 +261,7 @@ public sealed class Elevator
     public static (SecurityIdentifier Sid, string Account, string Full)? GetActiveSessionUser(Action<string>? onStep = null)
     {
         var step = onStep ?? (_ => { });
+        RevertToSelf();
         EnablePrivilege(SE_TCB_NAME, step);
         if (!TryGetUserToken(step, out var token)) return null;
         try
