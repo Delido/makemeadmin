@@ -128,9 +128,11 @@ public sealed class Installer
             foreach (var (port, path) in new[] { (p, "decision"), (p + 1, "trigger") })
             {
                 Run("netsh", $"http add urlacl url=http://+:{port}/{path}/ user=\"NT AUTHORITY\\SYSTEM\"", ignoreError: true);
-                Run("netsh", $"advfirewall firewall add rule name=\"RunAsAdmin {path} ({port})\" dir=in action=allow protocol=TCP localport={port} profile=private", ignoreError: true);
+                // Regel zuerst entfernen (falls mit altem Profil vorhanden), dann für ALLE Profile neu.
+                Run("netsh", $"advfirewall firewall delete rule name=\"RunAsAdmin {path} ({port})\"", ignoreError: true);
+                Run("netsh", $"advfirewall firewall add rule name=\"RunAsAdmin {path} ({port})\" dir=in action=allow protocol=TCP localport={port} profile=any", ignoreError: true);
             }
-            Step("URL-Vorbehalte und Firewallregeln (privates Netz) gesetzt.");
+            Step("URL-Vorbehalte und Firewallregeln (alle Netzwerkprofile) gesetzt.");
         }
         catch (Exception ex) { Step($"URL-Vorbehalte übersprungen: {ex.Message}"); }
     }

@@ -22,6 +22,42 @@ internal static partial class Win32
     internal enum SECURITY_IMPERSONATION_LEVEL { Anonymous, Identification, Impersonation, Delegation }
     internal enum TOKEN_TYPE { TokenPrimary = 1, TokenImpersonation }
 
+    // --- Privilege-Aktivierung (SeTcbPrivilege für WTSQueryUserToken) ---
+    internal const int TOKEN_ADJUST_PRIVILEGES = 0x0020;
+    internal const int SE_PRIVILEGE_ENABLED = 0x00000002;
+    internal const string SE_TCB_NAME = "SeTcbPrivilege";
+    internal const string SE_ASSIGNPRIMARYTOKEN_NAME = "SeAssignPrimaryTokenNameTokenPrivilege";
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct LUID { public uint LowPart; public int HighPart; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct LUID_AND_ATTRIBUTES { public LUID Luid; public int Attributes; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct TOKEN_PRIVILEGES
+    {
+        public int PrivilegeCount;
+        public LUID_AND_ATTRIBUTES Privilege;
+    }
+
+    [LibraryImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool OpenProcessToken(IntPtr ProcessHandle, int DesiredAccess, out IntPtr TokenHandle);
+
+    [LibraryImport("kernel32.dll")]
+    internal static partial IntPtr GetCurrentProcess();
+
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool LookupPrivilegeValue(string? lpSystemName, string lpName, out LUID lpLuid);
+
+    [LibraryImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool AdjustTokenPrivileges(IntPtr TokenHandle,
+        [MarshalAs(UnmanagedType.Bool)] bool DisableAllPrivileges,
+        ref TOKEN_PRIVILEGES NewState, int BufferLength, IntPtr PreviousState, IntPtr ReturnLength);
+
     // TOKEN_INFORMATION_CLASS.TokenLinkedToken
     internal const int TokenLinkedToken = 19;
 

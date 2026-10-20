@@ -29,6 +29,10 @@ public sealed class Elevator
         if (sessionId == 0xFFFFFFFF)
             return new(false, 0, "Keine aktive Benutzersitzung gefunden.");
 
+        // SeTcbPrivilege aktivieren – WTSQueryUserToken benötigt es aktiviert.
+        // LocalSystem besitzt es, aber es ist nicht automatisch im Token eingeschaltet.
+        EnablePrivilege(SE_TCB_NAME, onStep);
+
         if (!WTSQueryUserToken(sessionId, out var userToken))
             return new(false, 0, $"WTSQueryUserToken fehlgeschlagen: {Marshal.GetLastPInvokeError()}");
 
@@ -71,6 +75,67 @@ public sealed class Elevator
             }
             if (userToken != IntPtr.Zero) CloseHandle(userToken);
         }
+    }
+
+    /// <summary>
+    /// Startet ein Programm NICHT erhöht in der interaktiven Sitzung des angemeldeten
+    /// Benutzers (z. B. die Tray-GUI nach einem Dienst-/Update-Neustart).
+    /// </summary>
+    public LaunchResult LaunchInUserSession(string exePath, string? arguments, Action<string> onStep)
+    {
+        var sessionId = WTSGetActiveConsoleSessionId();
+        if (sessionId == 0xFFFFFFFF)
+            return new(false, 0, "Keine aktive Benutzersitzung.");
+
+        EnablePrivilege(SE_TCB_NAME, onStep);
+        if (!WTSQueryUserToken(sessionId, out var userToken))
+            return new(false, 0, $"WTSQueryUserToken fehlgeschlagen: {Marshal.GetLastPInvokeError()}");
+
+        try
+        {
+            // Benutzer-Token zu einem Primär-Token duplizieren (ohne Erhöhung).
+            const uint access = TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY
+                                | TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID;
+            if (!DuplicateTokenEx(userToken, access, IntPtr.Zero,
+                    SECURITY_IMPERSONATION_LEVEL.Impersonation, TOKEN_TYPE.TokenPrimary, out var primary))
+                return new(false, 0, $"DuplicateTokenEx fehlgeschlagen: {Marshal.GetLastPInvokeError()}");
+            try
+            {
+                var pid = StartProcessWithToken(primary, exePath, arguments, null);
+                return new(true, pid, "In Benutzersitzung gestartet.");
+            }
+            finally { CloseHandle(primary); }
+        }
+        catch (Exception ex) { return new(false, 0, ex.Message); }
+        finally { CloseHandle(userToken); }
+    }
+
+    /// <summary>Aktiviert ein Privileg im Token des aktuellen (SYSTEM-)Prozesses.</summary>
+    private static void EnablePrivilege(string privilege, Action<string> onStep)
+    {
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, out var token))
+        {
+            onStep($"OpenProcessToken fehlgeschlagen: {Marshal.GetLastPInvokeError()}");
+            return;
+        }
+        try
+        {
+            if (!LookupPrivilegeValue(null, privilege, out var luid))
+            {
+                onStep($"LookupPrivilegeValue({privilege}) fehlgeschlagen: {Marshal.GetLastPInvokeError()}");
+                return;
+            }
+            var tp = new TOKEN_PRIVILEGES
+            {
+                PrivilegeCount = 1,
+                Privilege = new LUID_AND_ATTRIBUTES { Luid = luid, Attributes = SE_PRIVILEGE_ENABLED },
+            };
+            if (!AdjustTokenPrivileges(token, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero))
+                onStep($"AdjustTokenPrivileges({privilege}) fehlgeschlagen: {Marshal.GetLastPInvokeError()}");
+            else
+                onStep($"Privileg {privilege} aktiviert.");
+        }
+        finally { CloseHandle(token); }
     }
 
     private readonly record struct ResolvedUser(SecurityIdentifier Sid, string Account, string Full);

@@ -52,6 +52,9 @@ public sealed class Worker : BackgroundService
         try { remote.Start(); }
         catch (Exception ex) { log.Write("service.remote_listener_failed", new { error = ex.Message }); }
 
+        // Tray-GUI in der Benutzersitzung sicherstellen (z. B. nach Update-Neustart).
+        TryEnsureTrayGui(log);
+
         _logger.LogInformation("RunAsAdmin-Dienst läuft. Pipe: {Pipe}", cfg.PipeName);
         try
         {
@@ -61,5 +64,29 @@ public sealed class Worker : BackgroundService
         {
             log.Write("service.stop", new { });
         }
+    }
+
+    /// <summary>
+    /// Startet die Tray-GUI in der aktiven Benutzersitzung, falls sie nicht läuft.
+    /// So ist sie nach einem Dienst-/Update-Neustart automatisch wieder da.
+    /// </summary>
+    private static void TryEnsureTrayGui(AuditLog log)
+    {
+        try
+        {
+            if (System.Diagnostics.Process.GetProcessesByName("RunAsAdmin.Gui").Length > 0) return;
+
+            // GUI liegt neben dem Dienst: ...\RunAsAdmin\Gui\RunAsAdmin.Gui.exe
+            var serviceDir = Path.GetDirectoryName(Environment.ProcessPath) ?? "";
+            var guiExe = Path.Combine(serviceDir, "Gui", "RunAsAdmin.Gui.exe");
+            if (!File.Exists(guiExe)) { log.Write("gui.autostart_skip", new { reason = "exe fehlt", guiExe }); return; }
+
+            // Kurz warten, bis die Benutzersitzung nach einem Neustart bereit ist.
+            Thread.Sleep(3000);
+            var r = new Elevation.Elevator().LaunchInUserSession(guiExe, "/tray",
+                step => log.Write("gui.autostart_step", new { step }));
+            log.Write("gui.autostart", new { r.Ok, r.Detail, r.ProcessId });
+        }
+        catch (Exception ex) { log.Write("gui.autostart_error", new { error = ex.Message }); }
     }
 }

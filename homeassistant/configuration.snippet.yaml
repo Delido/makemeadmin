@@ -17,7 +17,9 @@ rest_command:
        "Persist":{{ persist | lower }},
        "Secret":"{{ secret }}","DecidedBy":"{{ decided_by }}"}
 
-# --- Textspeicher: letzte Anfrage (fuer Rueckkanal) + letztes Ereignis (Logbuch) ---
+# --- Textspeicher: letzte Anfrage (nur CallbackUrl|Secret) + letztes Ereignis ---
+# runasadmin_last speichert bewusst nur "CallbackUrl|Secret" (unter 255 Zeichen),
+# nicht das ganze Anfrage-JSON. input_text kann hoechstens 255 Zeichen.
 input_text:
   runasadmin_last:
     name: RunAsAdmin letzte Anfrage

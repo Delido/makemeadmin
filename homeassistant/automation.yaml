@@ -18,11 +18,13 @@
   actions:
     - variables:
         req: "{{ trigger.json }}"
+    # Nur das Noetige speichern (passt in 255): CallbackUrl + Secret, getrennt mit "|".
+    # Das volle JSON wuerde das 255-Limit von input_text sprengen.
     - action: input_text.set_value
       target:
         entity_id: input_text.runasadmin_last
       data:
-        value: "{{ req | to_json }}"
+        value: "{{ req.CallbackUrl }}|{{ req.Secret }}"
     - action: notify.mobile_app_DEIN_HANDY
       data:
         title: "Adminrechte angefragt"
@@ -59,14 +61,16 @@
         approved: "{{ act.startswith('RAA_ALLOW_') or act.startswith('RAA_PERSIST_') }}"
         persist: "{{ act.startswith('RAA_PERSIST_') }}"
         request_id: "{{ act.split('_')[-1] }}"
-        req: "{{ states('input_text.runasadmin_last') | from_json }}"
+        stored: "{{ states('input_text.runasadmin_last') }}"
+        cb: "{{ stored.split('|')[0] }}"
+        sc: "{{ stored.split('|')[1] if '|' in stored else '' }}"
     - action: rest_command.runasadmin_decision
       data:
-        callback_url: "{{ req.CallbackUrl }}"
+        callback_url: "{{ cb }}"
         request_id: "{{ request_id }}"
         approved: "{{ approved }}"
         persist: "{{ persist }}"
-        secret: "{{ req.Secret }}"
+        secret: "{{ sc }}"
         decided_by: "{{ trigger.event.data.sourceDevicePermanentID | default('app') }}"
 
 # 3) Dienst-Ereignisse ins Logbuch + Statistik (Start, Admin-Zeit, Prozesse)

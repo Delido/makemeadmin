@@ -139,7 +139,7 @@ try {
         $url = "http://+:$p/$path/"
         netsh http add urlacl url=$url user="NT AUTHORITY\SYSTEM" 2>&1 | Out-Null
         netsh advfirewall firewall add rule name="RunAsAdmin $path ($p)" dir=in action=allow `
-            protocol=TCP localport=$p profile=private 2>&1 | Out-Null
+            protocol=TCP localport=$p profile=any 2>&1 | Out-Null
     }
     Write-Host "URL-Vorbehalte und Firewallregeln (privates Netz) gesetzt."
 } catch {
