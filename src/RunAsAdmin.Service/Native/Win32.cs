@@ -129,6 +129,14 @@ internal static partial class Win32
     internal static partial bool GetTokenInformation(IntPtr TokenHandle, int TokenInformationClass,
         IntPtr TokenInformation, int TokenInformationLength, out int ReturnLength);
 
+    // TokenSessionId = 12 – damit der Prozess in der sichtbaren Sitzung startet.
+    internal const int TokenSessionId = 12;
+
+    [LibraryImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SetTokenInformation(IntPtr TokenHandle, int TokenInformationClass,
+        ref uint TokenInformation, int TokenInformationLength);
+
     [LibraryImport("advapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool DuplicateTokenEx(IntPtr hExistingToken, uint dwDesiredAccess,

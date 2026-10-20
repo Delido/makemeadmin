@@ -276,6 +276,16 @@ public sealed class Elevator
     private static int StartProcessWithToken(IntPtr primaryToken, string exePath, string? arguments,
         string? workingDir)
     {
+        // Session-ID des Tokens auf die aktive Konsolensitzung setzen, damit der
+        // Prozess in der SICHTBAREN Sitzung startet (sonst Session 0 -> unsichtbar
+        // bzw. sofortiges Beenden). Benötigt SeTcbPrivilege (ist aktiviert).
+        var consoleSession = WTSGetActiveConsoleSessionId();
+        if (consoleSession != 0xFFFFFFFF)
+        {
+            var sess = consoleSession;
+            SetTokenInformation(primaryToken, TokenSessionId, ref sess, sizeof(uint));
+        }
+
         if (!CreateEnvironmentBlock(out var env, primaryToken, false))
             throw new Win32Exception(Marshal.GetLastPInvokeError(), "CreateEnvironmentBlock fehlgeschlagen.");
         try
