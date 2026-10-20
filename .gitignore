@@ -1,0 +1,17 @@
+# Build-Ausgaben
+bin/
+obj/
+publish/
+usb-paket/
+
+# GEHEIMNISSE: echte Konfiguration mit Secret/HA-URL NIE committen
+config/config.json
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+
+# Betriebssystem
+Thumbs.db
+desktop.ini

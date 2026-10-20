@@ -1,0 +1,70 @@
+<Window x:Class="RunAsAdmin.Gui.RequestWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Mit Adminrechten anfragen" Height="340" Width="460"
+        WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
+        Background="#0F1115" FontFamily="Segoe UI Variable, Segoe UI">
+    <Border Padding="28">
+        <Border.Background>
+            <RadialGradientBrush GradientOrigin="0.3,0" Center="0.3,0" RadiusX="1.2" RadiusY="1">
+                <GradientStop Color="#1A2130" Offset="0"/>
+                <GradientStop Color="#0F1115" Offset="0.8"/>
+            </RadialGradientBrush>
+        </Border.Background>
+        <StackPanel>
+            <TextBlock x:Name="Icon" Text="🔐" FontSize="44" HorizontalAlignment="Center"/>
+            <TextBlock x:Name="TitleText" Text="Mit Adminrechten anfragen?"
+                       Foreground="White" FontSize="20" FontWeight="SemiBold"
+                       HorizontalAlignment="Center" Margin="0,10,0,0" TextAlignment="Center" TextWrapping="Wrap"/>
+            <TextBlock x:Name="AppText" Foreground="#AEB4BF" FontSize="14"
+                       HorizontalAlignment="Center" Margin="0,8,0,0" TextAlignment="Center" TextWrapping="Wrap"/>
+            <ProgressBar x:Name="Bar" IsIndeterminate="True" Height="5" Margin="0,22,0,0"
+                         Background="#2A2D38" Foreground="#4CC26A" BorderThickness="0" Visibility="Collapsed"/>
+
+            <StackPanel x:Name="Buttons" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,24,0,0">
+                <Button x:Name="AskBtn" Content="Anfragen" Click="Ask_Click" Width="150" Height="44"
+                        Cursor="Hand" FontSize="15" FontWeight="SemiBold" Foreground="White">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="b" CornerRadius="10" Background="#2A5BD7">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="b" Property="Background" Value="#3366E0"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+                <Button x:Name="CancelBtn" Content="Abbrechen" Click="Cancel_Click" Width="120" Height="44"
+                        Margin="12,0,0,0" Cursor="Hand" FontSize="14" Foreground="#CFD3DA">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="b" CornerRadius="10" Background="#2C2F3A" BorderBrush="#33FFFFFF" BorderThickness="1">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="b" Property="Background" Value="#3A3E4B"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </StackPanel>
+
+            <Button x:Name="CloseBtn" Content="Schließen" Click="Cancel_Click" Width="150" Height="44"
+                    Cursor="Hand" FontSize="15" FontWeight="SemiBold" Foreground="White"
+                    HorizontalAlignment="Center" Margin="0,24,0,0" Visibility="Collapsed">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="b" CornerRadius="10" Background="#2C2F3A" BorderBrush="#33FFFFFF" BorderThickness="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+        </StackPanel>
+    </Border>
+</Window>

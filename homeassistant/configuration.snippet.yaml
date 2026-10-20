@@ -1,0 +1,36 @@
+# In configuration.yaml einfuegen (bzw. in die jeweiligen Pakete).
+# Nach Aenderungen hier: Home Assistant komplett NEU STARTEN (rest_command &
+# template-Sensoren werden nicht per "YAML neu laden" aktualisiert).
+#
+# WICHTIG: Hast du einen Schluessel (z. B. input_text:) schon woanders in der
+# configuration.yaml, NICHT doppelt anlegen, sondern nur die Unterpunkte dort
+# einruecken. Jeder Top-Level-Schluessel darf nur EINMAL vorkommen.
+
+# --- Rueckkanal an den Kinder-PC (Entscheidung Erlauben/Immer/Ablehnen) ---
+rest_command:
+  runasadmin_decision:
+    url: "{{ callback_url }}"
+    method: POST
+    content_type: "application/json"
+    payload: >
+      {"RequestId":"{{ request_id }}","Approved":{{ approved | lower }},
+       "Persist":{{ persist | lower }},
+       "Secret":"{{ secret }}","DecidedBy":"{{ decided_by }}"}
+
+# --- Textspeicher: letzte Anfrage (fuer Rueckkanal) + letztes Ereignis (Logbuch) ---
+input_text:
+  runasadmin_last:
+    name: RunAsAdmin letzte Anfrage
+    max: 255
+  runasadmin_lastevent:
+    name: RunAsAdmin letztes Ereignis
+    max: 255
+
+# --- Zaehler fuer eine kleine Statistik (optional, fuers Dashboard) ---
+counter:
+  runasadmin_grants:
+    name: RunAsAdmin Freigaben gesamt
+    icon: mdi:shield-check
+  runasadmin_timeadmin:
+    name: RunAsAdmin Admin-Zeiten gesamt
+    icon: mdi:clock-alert

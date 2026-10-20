@@ -1,0 +1,26 @@
+# UI-Editor-Variante (ohne fuehrendes "- ").
+id: runasadmin_decision
+alias: RunAsAdmin – Entscheidung zuruecksenden
+mode: parallel
+max: 10
+triggers:
+  - trigger: event
+    event_type: mobile_app_notification_action
+conditions:
+  - condition: template
+    value_template: "{{ trigger.event.data.action.startswith('RAA_') }}"
+actions:
+  - variables:
+      act: "{{ trigger.event.data.action }}"
+      approved: "{{ act.startswith('RAA_ALLOW_') or act.startswith('RAA_PERSIST_') }}"
+      persist: "{{ act.startswith('RAA_PERSIST_') }}"
+      request_id: "{{ act.split('_')[-1] }}"
+      req: "{{ states('input_text.runasadmin_last') | from_json }}"
+  - action: rest_command.runasadmin_decision
+    data:
+      callback_url: "{{ req.CallbackUrl }}"
+      request_id: "{{ request_id }}"
+      approved: "{{ approved }}"
+      persist: "{{ persist }}"
+      secret: "{{ req.Secret }}"
+      decided_by: "{{ trigger.event.data.sourceDevicePermanentID | default('app') }}"

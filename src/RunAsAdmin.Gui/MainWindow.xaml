@@ -1,0 +1,204 @@
+﻿<Window x:Class="RunAsAdmin.Gui.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Programme starten" Height="560" Width="680"
+        MinHeight="420" MinWidth="520"
+        WindowStartupLocation="CenterScreen"
+        Background="#0F1115" FontFamily="Segoe UI Variable, Segoe UI"
+        TextOptions.TextFormattingMode="Ideal"
+        UseLayoutRounding="True">
+
+    <Window.Resources>
+        <!-- Farbpalette -->
+        <Color x:Key="BgColor">#0F1115</Color>
+        <SolidColorBrush x:Key="CardStroke" Color="#22FFFFFF"/>
+        <SolidColorBrush x:Key="TextMuted" Color="#8A909B"/>
+
+        <!-- Gemeinsames Kachel-Template; Farben kommen aus Tag/Hintergrund -->
+        <Style x:Key="Tile" TargetType="Button">
+            <Setter Property="Height" Value="104"/>
+            <Setter Property="Margin" Value="7"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontSize" Value="17"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Border x:Name="shadow" CornerRadius="16" Margin="0,3,0,0"
+                                    Background="#000000" Opacity="0.28"/>
+                            <Border x:Name="card" CornerRadius="16" Padding="18,16"
+                                    BorderThickness="1" BorderBrush="{StaticResource CardStroke}">
+                                <Border.Background>
+                                    <!-- Standard: Grün (sofort). Blau/Grau per Trigger unten. -->
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#2E7D46" Offset="0"/>
+                                        <GradientStop Color="#1F5A32" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <Grid>
+                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Left">
+                                        <TextBlock Text="{TemplateBinding Content}"
+                                                   FontSize="18" FontWeight="SemiBold" Foreground="White"/>
+                                        <TextBlock Text="{Binding Hint, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                   Foreground="#DBFFFFFF" FontSize="12.5" FontWeight="Normal"
+                                                   Opacity="0.85" Margin="0,5,0,0"/>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding Glyph, RelativeSource={RelativeSource AncestorType=Button}}"
+                                               FontSize="26" VerticalAlignment="Top" HorizontalAlignment="Right"
+                                               Opacity="0.9"/>
+                                    <TextBlock Text="▶" FontSize="13" Foreground="#EEFFFFFF"
+                                               VerticalAlignment="Bottom" HorizontalAlignment="Right" Opacity="0.75"/>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <!-- Zeit-Admin: Orange (mächtiger, bewusst auffällig) -->
+                            <DataTrigger Binding="{Binding TileKind, RelativeSource={RelativeSource Self}}" Value="3">
+                                <Setter TargetName="card" Property="Background">
+                                    <Setter.Value>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                            <GradientStop Color="#E07A1F" Offset="0"/>
+                                            <GradientStop Color="#B85C10" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Setter.Value>
+                                </Setter>
+                            </DataTrigger>
+                            <!-- Freigabe nötig: Blau -->
+                            <DataTrigger Binding="{Binding TileKind, RelativeSource={RelativeSource Self}}" Value="1">
+                                <Setter TargetName="card" Property="Background">
+                                    <Setter.Value>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                            <GradientStop Color="#2A5BD7" Offset="0"/>
+                                            <GradientStop Color="#1C3E96" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Setter.Value>
+                                </Setter>
+                            </DataTrigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="card" Property="RenderTransform">
+                                    <Setter.Value><TranslateTransform Y="-2"/></Setter.Value>
+                                </Setter>
+                                <Setter TargetName="shadow" Property="Opacity" Value="0.42"/>
+                                <Setter TargetName="card" Property="BorderBrush" Value="#55FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="card" Property="RenderTransform">
+                                    <Setter.Value><TranslateTransform Y="1"/></Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="card" Property="Background">
+                                    <Setter.Value>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                            <GradientStop Color="#3A3D46" Offset="0"/>
+                                            <GradientStop Color="#2A2C33" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter Property="Foreground" Value="#9AA0AA"/>
+                                <Setter TargetName="shadow" Property="Opacity" Value="0.12"/>
+                                <Setter Property="Cursor" Value="No"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CloseBtn" TargetType="Button">
+            <Setter Property="Height" Value="42"/>
+            <Setter Property="Width" Value="160"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="b" CornerRadius="10" Background="#2C2F3A"
+                                BorderBrush="#33FFFFFF" BorderThickness="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="b" Property="Background" Value="#3A3E4B"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border CornerRadius="0">
+        <Grid>
+            <!-- Sanfter Hintergrundverlauf -->
+            <Grid.Background>
+                <RadialGradientBrush GradientOrigin="0.2,0.0" Center="0.2,0.0" RadiusX="1.3" RadiusY="1.1">
+                    <GradientStop Color="#1A2130" Offset="0"/>
+                    <GradientStop Color="#0F1115" Offset="0.7"/>
+                </RadialGradientBrush>
+            </Grid.Background>
+
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Margin="26,24,26,8">
+                    <TextBlock Text="Was möchtest du starten?" Foreground="White"
+                               FontSize="24" FontWeight="Bold"/>
+                    <TextBlock Foreground="{StaticResource TextMuted}" FontSize="13.5" Margin="0,5,0,0"
+                               Text="Tippe auf ein Programm. Grün startet sofort, Blau muss Papa kurz erlauben."/>
+                </StackPanel>
+
+                <Border DockPanel.Dock="Bottom" Padding="26,12">
+                    <Grid>
+                        <TextBlock x:Name="Footer" Foreground="#5A606B" FontSize="11.5"
+                                   VerticalAlignment="Center" Text="RunAsAdmin"/>
+                        <Button x:Name="UpdateBtn" Content="Nach Updates suchen" Click="Update_Click"
+                                HorizontalAlignment="Right" Cursor="Hand" Foreground="#8A93A6"
+                                FontSize="11.5" Background="Transparent" BorderThickness="0" Padding="6,2"/>
+                    </Grid>
+                </Border>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="19,8,19,0">
+                    <ItemsControl x:Name="Tiles">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <UniformGrid Columns="2"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+
+            <!-- Status-Overlay -->
+            <Grid x:Name="Overlay" Visibility="Collapsed">
+                <Rectangle Fill="#0F1115" Opacity="0.78"/>
+                <Border Background="#1A1D26" CornerRadius="20" Padding="40,36"
+                        BorderBrush="#26FFFFFF" BorderThickness="1"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" Width="440">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/>
+                    </Border.Effect>
+                    <StackPanel>
+                        <TextBlock x:Name="OverlayIcon" Text="⏳" FontSize="52" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="OverlayTitle" Text="Warte auf Freigabe…"
+                                   Foreground="White" FontSize="21" FontWeight="SemiBold"
+                                   HorizontalAlignment="Center" Margin="0,14,0,0" TextWrapping="Wrap"
+                                   TextAlignment="Center"/>
+                        <TextBlock x:Name="OverlayText" Foreground="{StaticResource TextMuted}" FontSize="14"
+                                   HorizontalAlignment="Center" Margin="0,8,0,0" TextWrapping="Wrap"
+                                   TextAlignment="Center"/>
+                        <ProgressBar x:Name="OverlayBar" IsIndeterminate="True" Height="5"
+                                     Margin="0,22,0,0" Background="#2A2D38" Foreground="#4CC26A"
+                                     BorderThickness="0"/>
+                        <Button x:Name="OverlayClose" Content="Schließen" Click="OverlayClose_Click"
+                                Style="{StaticResource CloseBtn}" Visibility="Collapsed"
+                                Margin="0,24,0,0" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

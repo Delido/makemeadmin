@@ -1,0 +1,36 @@
+# UI-Editor-Variante (ohne fuehrendes "- "). Fuer automations.yaml stattdessen
+# homeassistant/automation.yaml verwenden (Listen-Form).
+id: runasadmin_request
+alias: RunAsAdmin – Freigabe anfragen
+mode: parallel
+max: 10
+triggers:
+  - trigger: webhook
+    webhook_id: runasadmin_request
+    allowed_methods: [POST]
+    local_only: true
+actions:
+  - variables:
+      req: "{{ trigger.json }}"
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.runasadmin_last
+    data:
+      value: "{{ req | to_json }}"
+  - action: notify.mobile_app_DEIN_HANDY
+    data:
+      title: "Adminrechte angefragt"
+      message: >-
+        {{ req.User }} an {{ req.Computer }} moechte "{{ req.AppName }}" starten.
+        {% if req.Reason %}Grund: {{ req.Reason }}{% endif %}
+      data:
+        tag: "runasadmin_{{ req.RequestId }}"
+        actions: >-
+          {% set a = [
+            {"action": "RAA_ALLOW_" ~ req.RequestId, "title": "Einmal erlauben"},
+            {"action": "RAA_DENY_" ~ req.RequestId, "title": "Ablehnen"}
+          ] %}
+          {% if req.AllowPersist %}
+            {% set a = a + [{"action": "RAA_PERSIST_" ~ req.RequestId, "title": "Immer erlauben"}] %}
+          {% endif %}
+          {{ a }}

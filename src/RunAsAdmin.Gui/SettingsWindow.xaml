@@ -1,0 +1,82 @@
+<Window x:Class="RunAsAdmin.Gui.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Einstellungen (Eltern)" Height="560" Width="520"
+        WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
+        Background="#0F1115" FontFamily="Segoe UI Variable, Segoe UI">
+    <Window.Resources>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#C9CED8"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Margin" Value="0,12,0,4"/>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#1A1D26"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="#333845"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="CaretBrush" Value="White"/>
+        </Style>
+        <Style TargetType="PasswordBox">
+            <Setter Property="Background" Value="#1A1D26"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="#333845"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="CaretBrush" Value="White"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="26,22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="Einstellungen" Foreground="White" FontSize="22" FontWeight="Bold" Margin="0"/>
+            <TextBlock x:Name="Subtitle" Text="Nur fuer Eltern. Diese Werte sind vor den Kindern geschuetzt."
+                       Foreground="#8A909B" Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
+            <StackPanel x:Name="Form">
+                <TextBlock Text="Home-Assistant-Adresse (z. B. https://dein-ha.example.com)"/>
+                <TextBox x:Name="BaseUrl"/>
+
+                <TextBlock Text="Verbindung aktiv (Freigaben per Handy)"/>
+                <CheckBox x:Name="Enabled" Content="Home Assistant verwenden" Foreground="#C9CED8" Margin="0,2,0,0"/>
+
+                <TextBlock Text="Geheimnis (CallbackSecret)"/>
+                <PasswordBox x:Name="SecretBox"/>
+                <TextBlock x:Name="SecretHint" Text="" Foreground="#6B7280" FontSize="11" Margin="0,2,0,0"/>
+
+                <TextBlock Text="Webhook-ID Anfragen"/>
+                <TextBox x:Name="ReqWebhook"/>
+                <TextBlock Text="Webhook-ID Ereignisse"/>
+                <TextBox x:Name="EvtWebhook"/>
+                <TextBlock Text="Rueckkanal-Port"/>
+                <TextBox x:Name="Port"/>
+
+                <Separator Margin="0,18,0,0" Background="#2A2D38"/>
+                <TextBlock Text="Eltern-PIN" Foreground="White" FontSize="15" FontWeight="SemiBold" Margin="0,14,0,2"/>
+                <TextBlock x:Name="PinInfo" Text="" Foreground="#8A909B" FontSize="12" Margin="0,0,0,4"/>
+
+                <TextBlock x:Name="CurrentPinLabel" Text="Aktuelle PIN"/>
+                <PasswordBox x:Name="CurrentPin"/>
+                <TextBlock Text="Neue PIN (leer lassen = unveraendert)"/>
+                <PasswordBox x:Name="NewPin"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <TextBlock x:Name="Status" Text="" Foreground="#E0863C" VerticalAlignment="Center" Margin="0,0,16,0"/>
+            <Button Content="Abbrechen" Click="Cancel_Click" Width="110" Height="40" Cursor="Hand"
+                    Foreground="#CFD3DA" Background="#2C2F3A" BorderThickness="0" Margin="0,0,8,0"/>
+            <Button x:Name="SaveBtn" Content="Speichern" Click="Save_Click" Width="130" Height="40" Cursor="Hand"
+                    Foreground="White" Background="#2A5BD7" BorderThickness="0" FontWeight="SemiBold"/>
+        </StackPanel>
+    </Grid>
+</Window>

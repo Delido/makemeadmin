@@ -1,0 +1,28 @@
+{
+  "LogDirectory": "C:\\ProgramData\\RunAsAdmin\\logs",
+  "PipeName": "RunAsAdmin",
+  "ApprovalTimeoutSeconds": 120,
+  "HomeAssistant": {
+    "Enabled": false,
+    "BaseUrl": "",
+    "RequestWebhookId": "runasadmin_request",
+    "EventWebhookId": "runasadmin_event",
+    "ReportEvents": true,
+    "CallbackSecret": "",
+    "CallbackPort": 8731
+  },
+  "AllowedApps": [
+    {
+      "Name": "UniGetUI",
+      "Path": "",
+      "AutoApprove": true,
+      "Reason": "App-Updates/Installationen benoetigen Adminrechte."
+    },
+    {
+      "Name": "SignalRGB",
+      "Path": "",
+      "AutoApprove": false,
+      "Reason": "Update benoetigt Adminrechte."
+    }
+  ]
+}

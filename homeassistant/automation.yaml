@@ -1,0 +1,122 @@
+# RunAsAdmin – Home-Assistant-Automationen (Listen-Form fuer automations.yaml)
+# ==================================================================
+# Diese drei Automationen ans Ende von automations.yaml anhaengen, dann
+# Entwicklerwerkzeuge -> YAML -> "Automationen neu laden".
+# Die rest_command/input_text/counter-Helfer kommen aus configuration.snippet.yaml
+# (dafuer Home Assistant einmal komplett neu starten).
+
+# 1) Freigabe anfragen: Push mit Erlauben / (Immer) / Ablehnen
+- id: runasadmin_request
+  alias: RunAsAdmin – Freigabe anfragen
+  mode: parallel
+  max: 10
+  triggers:
+    - trigger: webhook
+      webhook_id: runasadmin_request
+      allowed_methods: [POST]
+      local_only: true
+  actions:
+    - variables:
+        req: "{{ trigger.json }}"
+    - action: input_text.set_value
+      target:
+        entity_id: input_text.runasadmin_last
+      data:
+        value: "{{ req | to_json }}"
+    - action: notify.mobile_app_DEIN_HANDY
+      data:
+        title: "Adminrechte angefragt"
+        message: >-
+          {{ req.User }} an {{ req.Computer }} moechte "{{ req.AppName }}" starten.
+          {% if req.Reason %}Grund: {{ req.Reason }}{% endif %}
+        data:
+          tag: "runasadmin_{{ req.RequestId }}"
+          # "Immer erlauben" nur anbieten, wenn der Dienst es erlaubt (neues Programm).
+          actions: >-
+            {% set a = [
+              {"action": "RAA_ALLOW_" ~ req.RequestId, "title": "Einmal erlauben"},
+              {"action": "RAA_DENY_" ~ req.RequestId, "title": "Ablehnen"}
+            ] %}
+            {% if req.AllowPersist %}
+              {% set a = a + [{"action": "RAA_PERSIST_" ~ req.RequestId, "title": "Immer erlauben"}] %}
+            {% endif %}
+            {{ a }}
+
+# 2) Entscheidung zuruecksenden (Erlauben / Immer / Ablehnen)
+- id: runasadmin_decision
+  alias: RunAsAdmin – Entscheidung zuruecksenden
+  mode: parallel
+  max: 10
+  triggers:
+    - trigger: event
+      event_type: mobile_app_notification_action
+  conditions:
+    - condition: template
+      value_template: "{{ trigger.event.data.action.startswith('RAA_') }}"
+  actions:
+    - variables:
+        act: "{{ trigger.event.data.action }}"
+        approved: "{{ act.startswith('RAA_ALLOW_') or act.startswith('RAA_PERSIST_') }}"
+        persist: "{{ act.startswith('RAA_PERSIST_') }}"
+        request_id: "{{ act.split('_')[-1] }}"
+        req: "{{ states('input_text.runasadmin_last') | from_json }}"
+    - action: rest_command.runasadmin_decision
+      data:
+        callback_url: "{{ req.CallbackUrl }}"
+        request_id: "{{ request_id }}"
+        approved: "{{ approved }}"
+        persist: "{{ persist }}"
+        secret: "{{ req.Secret }}"
+        decided_by: "{{ trigger.event.data.sourceDevicePermanentID | default('app') }}"
+
+# 3) Dienst-Ereignisse ins Logbuch + Statistik (Start, Admin-Zeit, Prozesse)
+- id: runasadmin_event
+  alias: RunAsAdmin – Ereignis protokollieren
+  mode: parallel
+  max: 25
+  triggers:
+    - trigger: webhook
+      webhook_id: runasadmin_event
+      allowed_methods: [POST]
+      local_only: true
+  actions:
+    - variables:
+        ev: "{{ trigger.json }}"
+        text: >-
+          {% set e = ev.event %}
+          {% set d = ev.data %}
+          {%- if e == 'launch.success' -%}
+            {{ ev.computer }}: „{{ d.Name }}" gestartet ({{ d.decision }})
+          {%- elif e == 'request.persisted' -%}
+            {{ ev.computer }}: „{{ d.Name }}" dauerhaft erlaubt
+          {%- elif e == 'request.denied' -%}
+            {{ ev.computer }}: „{{ d.Name }}" abgelehnt ({{ d.decision }})
+          {%- elif e == 'timeadmin.granted' -%}
+            {{ ev.computer }}: Admin-Zeit gestartet ({{ d.minutes }} Min) für {{ d.user }}
+          {%- elif e == 'timeadmin.revoked' -%}
+            {{ ev.computer }}: Admin-Zeit beendet ({{ d.reason }}), {{ d.processesStarted }} Prozesse gestartet
+          {%- else -%}
+            {{ ev.computer }}: {{ e }}
+          {%- endif -%}
+    # Ins Logbuch schreiben
+    - action: logbook.log
+      data:
+        name: RunAsAdmin
+        message: "{{ text }}"
+        entity_id: input_text.runasadmin_lastevent
+    # Letztes Ereignis als Zustand (fuer Dashboard-Karte)
+    - action: input_text.set_value
+      target:
+        entity_id: input_text.runasadmin_lastevent
+      data:
+        value: "{{ text[:255] }}"
+    # Zaehler fuer die Statistik
+    - choose:
+        - conditions: "{{ ev.event == 'launch.success' }}"
+          sequence:
+            - action: counter.increment
+              target: { entity_id: counter.runasadmin_grants }
+        - conditions: "{{ ev.event == 'timeadmin.granted' }}"
+          sequence:
+            - action: counter.increment
+              target: { entity_id: counter.runasadmin_timeadmin }
