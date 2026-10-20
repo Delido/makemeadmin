@@ -99,6 +99,31 @@ internal static partial class Win32
     [LibraryImport("kernel32.dll", SetLastError = true)]
     internal static partial uint WTSGetActiveConsoleSessionId();
 
+    // --- Sitzungsaufzählung (robustere Ermittlung der aktiven Benutzersitzung) ---
+    internal enum WTS_CONNECTSTATE_CLASS
+    {
+        WTSActive, WTSConnected, WTSConnectQuery, WTSShadow, WTSDisconnected,
+        WTSIdle, WTSListen, WTSReset, WTSDown, WTSInit,
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct WTS_SESSION_INFO
+    {
+        public uint SessionId;
+        [MarshalAs(UnmanagedType.LPWStr)] public string pWinStationName;
+        public WTS_CONNECTSTATE_CLASS State;
+    }
+
+    [DllImport("wtsapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool WTSEnumerateSessions(IntPtr hServer, int Reserved, int Version,
+        out IntPtr ppSessionInfo, out int pCount);
+
+    [DllImport("wtsapi32.dll")]
+    internal static extern void WTSFreeMemory(IntPtr pMemory);
+
+    internal static readonly IntPtr WTS_CURRENT_SERVER_HANDLE = IntPtr.Zero;
+
     [LibraryImport("advapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool GetTokenInformation(IntPtr TokenHandle, int TokenInformationClass,

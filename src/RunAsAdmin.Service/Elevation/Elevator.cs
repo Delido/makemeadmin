@@ -25,16 +25,12 @@ public sealed class Elevator
     public LaunchResult LaunchElevated(string exePath, string? arguments, string? workingDir,
         Action<string> onStep)
     {
-        var sessionId = WTSGetActiveConsoleSessionId();
-        if (sessionId == 0xFFFFFFFF)
-            return new(false, 0, "Keine aktive Benutzersitzung gefunden.");
-
         // SeTcbPrivilege aktivieren – WTSQueryUserToken benötigt es aktiviert.
         // LocalSystem besitzt es, aber es ist nicht automatisch im Token eingeschaltet.
         EnablePrivilege(SE_TCB_NAME, onStep);
 
-        if (!WTSQueryUserToken(sessionId, out var userToken))
-            return new(false, 0, $"WTSQueryUserToken fehlgeschlagen: {Marshal.GetLastPInvokeError()}");
+        if (!TryGetUserToken(onStep, out var userToken))
+            return new(false, 0, "Keine aktive Benutzersitzung mit Token gefunden.");
 
         string? samAccount = null;
         var addedToGroup = false;
@@ -42,7 +38,7 @@ public sealed class Elevator
         {
             var user = ResolveUser(userToken);
             samAccount = user.Account;
-            onStep($"Angemeldeter Benutzer: {user.Full} (Sitzung {sessionId})");
+            onStep($"Angemeldeter Benutzer: {user.Full}");
 
             // Kind kurz in die Administratorengruppe nehmen, damit das verknüpfte
             // (vollwertige) Token Admin-Rechte trägt.
@@ -83,13 +79,9 @@ public sealed class Elevator
     /// </summary>
     public LaunchResult LaunchInUserSession(string exePath, string? arguments, Action<string> onStep)
     {
-        var sessionId = WTSGetActiveConsoleSessionId();
-        if (sessionId == 0xFFFFFFFF)
-            return new(false, 0, "Keine aktive Benutzersitzung.");
-
         EnablePrivilege(SE_TCB_NAME, onStep);
-        if (!WTSQueryUserToken(sessionId, out var userToken))
-            return new(false, 0, $"WTSQueryUserToken fehlgeschlagen: {Marshal.GetLastPInvokeError()}");
+        if (!TryGetUserToken(onStep, out var userToken))
+            return new(false, 0, "Keine aktive Benutzersitzung mit Token gefunden.");
 
         try
         {
@@ -108,6 +100,55 @@ public sealed class Elevator
         }
         catch (Exception ex) { return new(false, 0, ex.Message); }
         finally { CloseHandle(userToken); }
+    }
+
+    /// <summary>
+    /// Holt ein Benutzer-Token für die aktive Sitzung. Versucht zuerst die
+    /// Konsolensitzung, dann (Fallback) die erste aktive Sitzung aus der Liste.
+    /// </summary>
+    internal static bool TryGetUserToken(Action<string> onStep, out IntPtr token)
+    {
+        token = IntPtr.Zero;
+
+        // 1) Konsolensitzung
+        var console = WTSGetActiveConsoleSessionId();
+        if (console != 0xFFFFFFFF && WTSQueryUserToken(console, out token))
+        {
+            onStep($"Token aus Konsolensitzung {console}.");
+            return true;
+        }
+        onStep($"Konsolensitzung {console} ohne Token (Fehler {Marshal.GetLastPInvokeError()}), suche aktive Sitzung…");
+
+        // 2) Alle Sitzungen durchgehen, erste aktive mit Token nehmen.
+        if (!WTSEnumerateSessions(WTS_CURRENT_SERVER_HANDLE, 0, 1, out var buffer, out var count))
+        {
+            onStep($"WTSEnumerateSessions fehlgeschlagen: {Marshal.GetLastPInvokeError()}");
+            return false;
+        }
+        try
+        {
+            var size = Marshal.SizeOf<WTS_SESSION_INFO>();
+            // Erst aktive Sitzungen, dann verbundene – jeweils mit gültigem Token.
+            foreach (var wantState in new[] { WTS_CONNECTSTATE_CLASS.WTSActive, WTS_CONNECTSTATE_CLASS.WTSConnected })
+            {
+                for (var i = 0; i < count; i++)
+                {
+                    var ptr = buffer + i * size;
+                    var info = Marshal.PtrToStructure<WTS_SESSION_INFO>(ptr);
+                    if (info.State != wantState) continue;
+                    if (info.SessionId == 0) continue; // Sitzung 0 = Dienste, kein Benutzer
+                    if (WTSQueryUserToken(info.SessionId, out token))
+                    {
+                        onStep($"Token aus Sitzung {info.SessionId} ({info.State}).");
+                        return true;
+                    }
+                }
+            }
+        }
+        finally { WTSFreeMemory(buffer); }
+
+        onStep("Keine Sitzung mit abrufbarem Benutzer-Token gefunden.");
+        return false;
     }
 
     /// <summary>Aktiviert ein Privileg im Token des aktuellen (SYSTEM-)Prozesses.</summary>
@@ -209,12 +250,11 @@ public sealed class Elevator
         finally { DestroyEnvironmentBlock(env); }
     }
 
-    /// <summary>SID des Benutzers der aktiven Konsolensitzung (für Zeit-Admin).</summary>
+    /// <summary>SID des Benutzers der aktiven Sitzung (für Zeit-Admin). Robuste Ermittlung.</summary>
     public static (SecurityIdentifier Sid, string Account, string Full)? GetActiveSessionUser()
     {
-        var sessionId = WTSGetActiveConsoleSessionId();
-        if (sessionId == 0xFFFFFFFF) return null;
-        if (!WTSQueryUserToken(sessionId, out var token)) return null;
+        EnablePrivilege(SE_TCB_NAME, _ => { });
+        if (!TryGetUserToken(_ => { }, out var token)) return null;
         try
         {
             var u = ResolveUser(token);
