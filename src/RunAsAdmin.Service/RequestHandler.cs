@@ -192,6 +192,7 @@ public sealed class RequestHandler
                 AllowPersist = isAdhoc,   // "Immer erlauben" nur für neue Programme anbieten
             };
             var result = await _approver.AskAsync(ask, _cfg.ApprovalTimeoutSeconds, ct);
+            _log.Write("request.approval_returned", new { requestId, result.Approved, result.Persist, result.DecidedBy });
             approved = result.Approved;
             persist = result.Approved && result.Persist && isAdhoc;
             decision = result.DecidedBy == "timeout" ? "Timeout" : "HomeAssistant";
