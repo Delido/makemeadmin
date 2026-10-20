@@ -128,20 +128,21 @@ public sealed class Elevator
         try
         {
             var size = Marshal.SizeOf<WTS_SESSION_INFO>();
-            // Erst aktive Sitzungen, dann verbundene – jeweils mit gültigem Token.
-            foreach (var wantState in new[] { WTS_CONNECTSTATE_CLASS.WTSActive, WTS_CONNECTSTATE_CLASS.WTSConnected })
+            onStep($"{count} Sitzungen gefunden, suche eine mit Token…");
+
+            // Alle Nicht-System-Sitzungen durchgehen und die ERSTE mit abrufbarem
+            // Benutzer-Token nehmen – unabhaengig vom gemeldeten State (robust auch
+            // bei gesperrtem Bildschirm / Vollbildspiel).
+            for (var i = 0; i < count; i++)
             {
-                for (var i = 0; i < count; i++)
+                var ptr = buffer + i * size;
+                var info = Marshal.PtrToStructure<WTS_SESSION_INFO>(ptr);
+                onStep($"  Sitzung {info.SessionId}: State={info.State}, Station={info.pWinStationName}");
+                if (info.SessionId == 0) continue; // Sitzung 0 = Dienste, kein Benutzer
+                if (WTSQueryUserToken(info.SessionId, out token))
                 {
-                    var ptr = buffer + i * size;
-                    var info = Marshal.PtrToStructure<WTS_SESSION_INFO>(ptr);
-                    if (info.State != wantState) continue;
-                    if (info.SessionId == 0) continue; // Sitzung 0 = Dienste, kein Benutzer
-                    if (WTSQueryUserToken(info.SessionId, out token))
-                    {
-                        onStep($"Token aus Sitzung {info.SessionId} ({info.State}).");
-                        return true;
-                    }
+                    onStep($"Token aus Sitzung {info.SessionId} ({info.State}).");
+                    return true;
                 }
             }
         }
