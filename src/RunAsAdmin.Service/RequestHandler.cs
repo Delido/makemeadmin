@@ -349,54 +349,29 @@ public sealed class RequestHandler
 
         _log.Write("launch.begin", new { requestId, app.Name, app.Path });
 
-        // Weg A ZUERST: Der Dienst (SYSTEM) startet das Programm selbst ERHÖHT in der
-        // sichtbaren Sitzung. Nur so wird ein Standardbenutzer-Programm wirklich erhöht
-        // (ohne UAC). Der Task-Weg kann das NICHT und bringt sonst eine UAC-Abfrage.
-        var elevated = _elevator.LaunchElevatedAsService(app.Path, app.Arguments, null,
-            step => _log.Write("launch.step", new { requestId, app.Name, step, via = "service-elevated" }));
-        if (elevated.Ok)
+        // Gleicher, FUNKTIONIERENDER Weg wie LaunchGame: Das Kind wird kurz Admin,
+        // dann startet der CLIENT (GUI/Anfrage-Dialog) die App selbst in der sichtbaren
+        // Sitzung. Der Dienst-interne Start (LaunchElevatedAsService) bleibt an der
+        // Session-0-Isolation unsichtbar – deshalb NICHT mehr hier starten.
+        var (grantOk, grantMsg) = _timeAdmin.GrantForAppLaunch(AppAdminMinutes, app.Name);
+        if (!grantOk)
         {
-            _log.Write("launch.success", new { requestId, app.Name, elevated.ProcessId, via = "service-elevated", decision });
-            return new ElevationResponse
-            {
-                State = RequestState.Approved, Decision = decision,
-                Message = $"{app.Name} wird gestartet.",
-            };
-        }
-        _log.Write("launch.elevated_failed", new { requestId, app.Name, detail = elevated.Detail });
-
-        // Rückfall 1: geplante Aufgabe (nur falls das Konto doch Admin ist).
-        var (taskOk, taskMsg) = TryLaunchViaTask(app);
-        if (taskOk)
-        {
-            _log.Write("launch.success", new { requestId, app.Name, via = "task", decision });
-            return new ElevationResponse
-            {
-                State = RequestState.Approved, Decision = decision,
-                Message = $"{app.Name} wird gestartet.",
-            };
-        }
-        _log.Write("launch.task_fallback", new { requestId, app.Name, taskMsg });
-
-        // Rückfall 2: alter Token-Weg (MakeMeAdmin).
-        var launch = _elevator.LaunchElevated(app.Path, app.Arguments, null,
-            step => _log.Write("launch.step", new { requestId, app.Name, step }));
-
-        if (!launch.Ok)
-        {
-            _log.Write("launch.failed", new { requestId, app.Name, detail = launch.Detail });
+            _log.Write("launch.grant_failed", new { requestId, app.Name, grantMsg });
             return new ElevationResponse
             {
                 State = RequestState.Error, Decision = decision,
-                Message = $"Start fehlgeschlagen: {elevated.Detail}",
+                Message = $"Adminrechte konnten nicht erteilt werden: {grantMsg}",
             };
         }
 
-        _log.Write("launch.success", new { requestId, app.Name, launch.ProcessId, via = "token", decision });
+        _log.Write("launch.admin_ready", new { requestId, app.Name, adminMinutes = AppAdminMinutes });
         return new ElevationResponse
         {
-            State = RequestState.Approved, Decision = decision,
-            Message = $"{app.Name} wurde gestartet.",
+            State = RequestState.Approved,
+            Decision = "GameClientLaunch",   // Signal an den Client: du startest selbst
+            Message = $"{app.Name} wird gestartet.",
+            LaunchPath = app.Path,
+            LaunchArgs = app.Arguments,
         };
     }
 

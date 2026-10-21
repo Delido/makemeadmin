@@ -111,12 +111,38 @@ public partial class App : System.Windows.Application
             };
             var item = new WinForms.ToolStripMenuItem(icon + g.Name) { Enabled = g.Available };
             var path = g.Path;
-            item.Click += async (_, _) =>
-            {
-                try { await RunAsAdmin.Shared.PipeClient.LaunchGameAsync(path); } catch { }
-            };
+            item.Click += async (_, _) => { await LaunchViaServiceAndStartAsync(path); };
             gamesMenu.DropDownItems.Add(item);
         }
+    }
+
+    /// <summary>
+    /// Fordert beim Dienst eine freigegebene App an (kurz-Admin) und startet sie dann
+    /// SELBST in der sichtbaren Sitzung (Decision="GameClientLaunch"). Gemeinsamer
+    /// Weg für Tray und GUI – umgeht die Session-0-Unsichtbarkeit.
+    /// </summary>
+    public static async Task<(bool Ok, string Message)> LaunchViaServiceAndStartAsync(string path)
+    {
+        try
+        {
+            var resp = await RunAsAdmin.Shared.PipeClient.LaunchGameAsync(path);
+            if (resp.State != RunAsAdmin.Shared.RequestState.Approved)
+                return (false, resp.Message);
+
+            if (resp.Decision == "GameClientLaunch" && !string.IsNullOrEmpty(resp.LaunchPath))
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = resp.LaunchPath,
+                    Arguments = resp.LaunchArgs ?? "",
+                    WorkingDirectory = System.IO.Path.GetDirectoryName(resp.LaunchPath) ?? "",
+                    UseShellExecute = true,
+                };
+                System.Diagnostics.Process.Start(psi);
+            }
+            return (true, resp.Message);
+        }
+        catch (Exception ex) { return (false, ex.Message); }
     }
 
     private System.Windows.Threading.DispatcherTimer? _statusTimer;
