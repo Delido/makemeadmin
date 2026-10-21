@@ -41,9 +41,14 @@ public static class UpdateApplier
                 return Fail("Update-Quelle nicht vertrauenswürdig.");
             }
 
-            // Frischer, eindeutiger Download-Ordner pro Lauf – so kann nie eine alte,
-            // noch gesperrte RunAsAdmin-Update.zip aus einem Abbruch den Download blockieren.
-            var baseDir = Path.Combine(Path.GetTempPath(), "RunAsAdminUpdateSvc");
+            // In das EIGENE ProgramData-Verzeichnis herunterladen, nicht in SystemTemp.
+            // Dort hat SYSTEM garantiert Vollzugriff (vom Installer gehärtet) – der
+            // SystemTemp-Ordner konnte eine ACL tragen, die SYSTEM das Schreiben verbot
+            // ("Access denied" beim Update). Diese Altlast wird zusätzlich aufgeräumt.
+            TryPurgeLegacyUpdateDir(log);
+            var baseDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "RunAsAdmin", "update");
             var dir = Path.Combine(baseDir, Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(dir);
             TryCleanupOldDirs(baseDir, dir);   // alte Reste best-effort aufräumen
@@ -56,6 +61,42 @@ public static class UpdateApplier
             log.Write("update.check_failed", new { error = ex.Message });
             return Fail($"Update-Prüfung fehlgeschlagen: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Entfernt den alten Download-Ordner aus SystemTemp, der eine ACL tragen konnte,
+    /// die SYSTEM das Schreiben verbot. Als SYSTEM dürfen wir Besitz + Rechte setzen.
+    /// </summary>
+    private static void TryPurgeLegacyUpdateDir(AuditLog log)
+    {
+        try
+        {
+            var win = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            foreach (var legacy in new[]
+            {
+                Path.Combine(win, "SystemTemp", "RunAsAdminUpdateSvc"),
+                Path.Combine(win, "Temp", "RunAsAdminUpdateSvc"),
+            })
+            {
+                if (!Directory.Exists(legacy)) continue;
+                RunQuiet("takeown", $"/f \"{legacy}\" /r /d j");
+                RunQuiet("icacls", $"\"{legacy}\" /grant \"*S-1-5-18:(OI)(CI)F\" /t");
+                try { Directory.Delete(legacy, true); log.Write("update.legacy_purged", new { legacy }); }
+                catch { }
+            }
+        }
+        catch { }
+    }
+
+    private static void RunQuiet(string file, string args)
+    {
+        try
+        {
+            using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(file, args)
+            { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true });
+            p?.WaitForExit(10000);
+        }
+        catch { }
     }
 
     /// <summary>Löscht alte Download-Unterordner (außer dem aktuellen) best-effort.</summary>
