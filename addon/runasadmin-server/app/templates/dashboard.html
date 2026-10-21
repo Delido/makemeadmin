@@ -37,6 +37,29 @@
   <div class="sub">Zentrale Steuerung und Verlauf der Kinder-PCs</div>
 
   <div class="card">
+    <h2>Benachrichtigung</h2>
+    <div class="req">
+      <div>
+        {% if notify_configured %}
+          <div class="who">Push-Dienst eingerichtet</div>
+          <div class="meta">Teste, ob die Benachrichtigung aufs Handy ankommt.</div>
+        {% else %}
+          <div class="who" style="color:#E05A4A;">Kein Push-Dienst gesetzt</div>
+          <div class="meta">Add-on-Option „notify_service" setzen (z.B. mobile_app_dein_handy, OHNE „notify.").</div>
+        {% endif %}
+      </div>
+      <form method="post" action="test-notify" style="margin:0;">
+        <button class="allow">Test senden</button>
+      </form>
+    </div>
+    {% if notify_status == 'ok' %}
+      <div class="meta" style="color:#2FBF71;margin-top:8px;">✅ Test-Push gesendet. Schau aufs Handy.</div>
+    {% elif notify_status == 'err' %}
+      <div class="meta" style="color:#E05A4A;margin-top:8px;">🚫 Fehlgeschlagen: {{ notify_detail }}</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
     <h2>Offene Anfragen</h2>
     {% if pending %}
       {% for r in pending %}

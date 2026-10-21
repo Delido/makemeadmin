@@ -79,18 +79,36 @@ def check_token(token: str | None):
         raise HTTPException(status_code=403, detail="Ungueltiges Token")
 
 
-async def ha_notify(title: str, message: str):
-    """Push ueber den HA-Supervisor an den konfigurierten Notify-Dienst."""
-    if not (NOTIFY_SERVICE and SUPERVISOR_TOKEN):
-        return
-    url = f"http://supervisor/core/api/services/notify/{NOTIFY_SERVICE}"
+async def ha_notify(title: str, message: str) -> tuple[bool, str]:
+    """
+    Push ueber den HA-Supervisor an den konfigurierten Notify-Dienst.
+    Gibt (ok, detail) zurueck und schreibt bei Problemen eine sichtbare Logzeile.
+    """
+    if not NOTIFY_SERVICE:
+        print("[notify] uebersprungen: Option 'notify_service' ist leer.", flush=True)
+        return False, "notify_service ist leer (Add-on-Option setzen)."
+    if not SUPERVISOR_TOKEN:
+        print("[notify] FEHLER: SUPERVISOR_TOKEN fehlt (homeassistant_api?).", flush=True)
+        return False, "SUPERVISOR_TOKEN fehlt."
+    # Der Wert soll OHNE 'notify.'-Praefix sein; falls doch gesetzt, tolerant abschneiden.
+    svc = NOTIFY_SERVICE
+    if svc.startswith("notify."):
+        svc = svc[len("notify."):]
+    url = f"http://supervisor/core/api/services/notify/{svc}"
     headers = {"Authorization": f"Bearer {SUPERVISOR_TOKEN}"}
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            await client.post(url, headers=headers,
-                              json={"title": title, "message": message})
-    except Exception:
-        pass
+            r = await client.post(url, headers=headers,
+                                  json={"title": title, "message": message})
+        if r.status_code < 300:
+            print(f"[notify] gesendet an '{svc}' ({r.status_code}).", flush=True)
+            return True, f"gesendet ({r.status_code})"
+        body = (r.text or "")[:200]
+        print(f"[notify] FEHLER {r.status_code} an '{svc}': {body}", flush=True)
+        return False, f"HA antwortete {r.status_code}: {body}"
+    except Exception as ex:
+        print(f"[notify] AUSNAHME an '{svc}': {ex}", flush=True)
+        return False, str(ex)
 
 
 # ---------------- API fuer die Kinder-PCs ----------------
@@ -206,6 +224,9 @@ async def dashboard(request: Request):
         top_apps=db.top_apps(),
         top_games=db.top_games(),
         reg_games=db.registered_games(),
+        notify_status=request.query_params.get("notify"),
+        notify_detail=request.query_params.get("detail", ""),
+        notify_configured=bool(NOTIFY_SERVICE),
     )
 
 
@@ -240,6 +261,16 @@ async def remove_game(request: Request, computer: str = Form(...), game: str = F
         raise HTTPException(status_code=403, detail="Nicht angemeldet")
     db.request_remove(computer, game)
     return RedirectResponse("./", status_code=303)
+
+
+@app.post("/test-notify")
+async def test_notify(request: Request):
+    """Schickt eine Test-Push, um die notify_service-Einstellung zu pruefen."""
+    if not _authed(request):
+        raise HTTPException(status_code=403, detail="Nicht angemeldet")
+    ok, detail = await ha_notify("RunAsAdmin – Test",
+                                 "Test-Benachrichtigung vom RunAsAdmin-Add-on. Wenn du das liest, funktioniert es! ✅")
+    return RedirectResponse(f"./?notify={'ok' if ok else 'err'}&detail={detail[:160]}", status_code=303)
 
 
 @app.get("/api/health")
