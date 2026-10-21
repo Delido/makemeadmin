@@ -1,6 +1,8 @@
 """RunAsAdmin Server – FastAPI-App: API fuer die Kinder-PCs + Web-Dashboard."""
 import os
 import hmac
+import hashlib
+import time
 
 import httpx
 from fastapi import FastAPI, Request, HTTPException, Form
@@ -12,6 +14,39 @@ from . import db
 PC_TOKEN = os.environ.get("RAA_PC_TOKEN", "")
 NOTIFY_SERVICE = os.environ.get("RAA_NOTIFY_SERVICE", "")
 SUPERVISOR_TOKEN = os.environ.get("RAA_SUPERVISOR_TOKEN", "")
+# Eigener Dashboard-Zugangsschutz (unabhaengig vom HA-Login, da auch die Kinder
+# ein HA-Login haben). Leer = kein Schutz (Abwaertskompatibel).
+DASHBOARD_PIN = os.environ.get("RAA_DASHBOARD_PIN", "")
+# Secret zum Signieren des Login-Cookies (aus pc_token abgeleitet, stabil pro Lauf).
+_COOKIE_SECRET = hashlib.sha256(("cookie:" + PC_TOKEN).encode()).hexdigest()
+_COOKIE_NAME = "raa_auth"
+_COOKIE_TTL = 8 * 3600   # 8 Stunden
+
+
+def _make_cookie() -> str:
+    exp = int(time.time()) + _COOKIE_TTL
+    sig = hmac.new(_COOKIE_SECRET.encode(), str(exp).encode(), hashlib.sha256).hexdigest()
+    return f"{exp}.{sig}"
+
+
+def _cookie_valid(value: str | None) -> bool:
+    if not value or "." not in value:
+        return False
+    try:
+        exp_s, sig = value.rsplit(".", 1)
+        if int(exp_s) < time.time():
+            return False
+        good = hmac.new(_COOKIE_SECRET.encode(), exp_s.encode(), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(sig, good)
+    except Exception:
+        return False
+
+
+def _authed(req: Request) -> bool:
+    """true, wenn kein PIN gesetzt ist ODER ein gueltiges Login-Cookie vorliegt."""
+    if not DASHBOARD_PIN:
+        return True
+    return _cookie_valid(req.cookies.get(_COOKIE_NAME))
 
 app = FastAPI(title="RunAsAdmin Server")
 # Eigenes Jinja2-Environment (umgeht den defekten Starlette/Jinja2-Cache unter Py3.13).
@@ -96,6 +131,16 @@ async def api_cancel_status(req: Request):
     return {"cancel": db.take_cancel(computer)}
 
 
+@app.post("/api/remove-status")
+async def api_remove_status(req: Request):
+    """Der PC-Dienst pollt, welche App-Freigaben entfernt werden sollen (Namen)."""
+    data = await req.json()
+    check_token(data.get("Token"))
+    computer = data.get("Computer", "?")
+    db.seen(computer)
+    return {"remove": db.take_removals(computer)}
+
+
 @app.post("/api/event")
 async def api_event(req: Request):
     data = await req.json()
@@ -132,8 +177,27 @@ def _parse_detail(detail):
 
 # ---------------- Web-Dashboard (HA-Ingress) ----------------
 
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, fehler: str = ""):
+    return render("login.html", fehler=fehler)
+
+
+@app.post("/login")
+async def login(request: Request, pin: str = Form("")):
+    if DASHBOARD_PIN and hmac.compare_digest(pin, DASHBOARD_PIN):
+        resp = RedirectResponse("./", status_code=303)
+        resp.set_cookie(_COOKIE_NAME, _make_cookie(), max_age=_COOKIE_TTL,
+                        httponly=True, samesite="lax")
+        return resp
+    return RedirectResponse("login?fehler=1", status_code=303)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
+    # Eigener Zugangsschutz: Kinder haben zwar ein HA-Login, aber ohne PIN kein
+    # Zugriff auf dieses Dashboard.
+    if not _authed(request):
+        return RedirectResponse("login", status_code=303)
     return render("dashboard.html",
         pending=db.pending_requests(),
         active=db.active_sessions(),
@@ -146,7 +210,9 @@ async def dashboard(request: Request):
 
 
 @app.post("/decide")
-async def decide(request_id: str = Form(...), action: str = Form(...)):
+async def decide(request: Request, request_id: str = Form(...), action: str = Form(...)):
+    if not _authed(request):
+        raise HTTPException(status_code=403, detail="Nicht angemeldet")
     # allow_always = dauerhaft erlauben (Client traegt das Programm dann fest ein).
     if action == "allow_always":
         state = "allow_always"
@@ -155,14 +221,25 @@ async def decide(request_id: str = Form(...), action: str = Form(...)):
     else:
         state = "deny"
     db.decide(request_id, state, "dashboard")
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("./", status_code=303)
 
 
 @app.post("/cancel")
-async def cancel(computer: str = Form(...)):
+async def cancel(request: Request, computer: str = Form(...)):
     """Not-Aus vom Dashboard: der betroffene PC beendet die Admin-Zeit beim naechsten Poll."""
+    if not _authed(request):
+        raise HTTPException(status_code=403, detail="Nicht angemeldet")
     db.request_cancel(computer)
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("./", status_code=303)
+
+
+@app.post("/remove-game")
+async def remove_game(request: Request, computer: str = Form(...), game: str = Form(...)):
+    """App-Freigabe vom Dashboard entfernen: der PC holt das beim naechsten Poll ab."""
+    if not _authed(request):
+        raise HTTPException(status_code=403, detail="Nicht angemeldet")
+    db.request_remove(computer, game)
+    return RedirectResponse("./", status_code=303)
 
 
 @app.get("/api/health")

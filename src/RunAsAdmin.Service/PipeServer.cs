@@ -132,6 +132,10 @@ public sealed class PipeServer
             {
                 responseObject = _handler.LaunchGame(msg.Request?.CustomPath ?? "", user);
             }
+            else if (msg.Verb == PipeVerb.RemoveApp)
+            {
+                responseObject = _handler.RemoveApp(msg.Request?.CustomPath ?? "", msg.Settings?.Pin, user);
+            }
             else if (msg.Verb == PipeVerb.ApplyUpdate)
             {
                 // Sicherheit: der Dienst lädt + prüft das Update SELBST von GitHub.

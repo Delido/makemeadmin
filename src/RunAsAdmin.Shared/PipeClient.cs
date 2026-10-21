@@ -143,6 +143,20 @@ public static class PipeClient
                ?? new ElevationResponse { State = RequestState.Error, Message = "Keine Antwort erhalten." };
     }
 
+    /// <summary>Entfernt eine dauerhaft freigegebene App (PIN-geschützt).</summary>
+    public static async Task<ElevationResponse> RemoveAppAsync(string path, string pin, CancellationToken ct = default)
+    {
+        var msg = new PipeMessage
+        {
+            Verb = PipeVerb.RemoveApp,
+            Request = new ElevationRequest { CustomPath = path },
+            Settings = new SettingsPayload { Pin = pin },
+        };
+        var line = await SendAsync(msg, ct);
+        return (line is null ? null : AppConfig.Deserialize<ElevationResponse>(line))
+               ?? new ElevationResponse { State = RequestState.Error, Message = "Keine Antwort erhalten." };
+    }
+
     /// <summary>Fragt den Status einer laufenden Admin-Zeit ab.</summary>
     public static async Task<TimeAdminResponse> TimeStatusAsync(CancellationToken ct = default)
     {

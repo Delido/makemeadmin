@@ -32,6 +32,8 @@ public enum PipeVerb
     GrantTimeLocal = 11,
     /// <summary>Ein dauerhaft freigegebenes Spiel erhöht starten (über geplante Aufgabe).</summary>
     LaunchGame = 12,
+    /// <summary>Eine dauerhaft freigegebene App wieder entfernen (PIN-geschützt).</summary>
+    RemoveApp = 13,
 }
 
 /// <summary>Antwort auf AdminCheck / Demote.</summary>

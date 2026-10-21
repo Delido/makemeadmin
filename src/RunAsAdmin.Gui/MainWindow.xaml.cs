@@ -233,6 +233,7 @@ public partial class MainWindow : Window
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         // Kategorie-Icon
         var icon = new TextBlock
@@ -277,6 +278,23 @@ public partial class MainWindow : Window
         btn.Click += Game_Play;
         Grid.SetColumn(btn, 2);
         grid.Children.Add(btn);
+
+        // Entfernen-Button (PIN-geschützt) – dezent, rechts daneben.
+        var removeBtn = new Button
+        {
+            Content = "🗑",
+            Cursor = System.Windows.Input.Cursors.Hand,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x90, 0x9B)),
+            Background = System.Windows.Media.Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(10, 8, 6, 8),
+            FontSize = 15,
+            ToolTip = "Freigabe entfernen (Eltern-PIN)",
+            Tag = new[] { g.Path, g.Name },
+        };
+        removeBtn.Click += Game_Remove;
+        Grid.SetColumn(removeBtn, 3);
+        grid.Children.Add(removeBtn);
 
         return new Border
         {
@@ -330,6 +348,23 @@ public partial class MainWindow : Window
         {
             ShowOverlay("🚫", "Es hat nicht geklappt", ex.Message, waiting: false);
         }
+    }
+
+    private async void Game_Remove(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button b || b.Tag is not string[] info || info.Length < 2) return;
+        var path = info[0];
+        var name = info[1];
+        var pin = PinPrompt.Ask(this, $"Eltern-PIN, um '{name}' aus den Apps zu entfernen:");
+        if (string.IsNullOrEmpty(pin)) return;
+        try
+        {
+            var resp = await PipeClient.RemoveAppAsync(path, pin);
+            var ok = resp.State == RequestState.Approved;
+            ShowOverlay(ok ? "✅" : "🚫", ok ? "Entfernt" : "Nicht entfernt", resp.Message, waiting: false);
+            if (ok) await LoadGamesAsync();   // Liste neu laden
+        }
+        catch (Exception ex) { ShowOverlay("🚫", "Fehler", ex.Message, waiting: false); }
     }
 
     // ---------- Status-Seite ----------

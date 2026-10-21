@@ -498,6 +498,54 @@ public sealed class RequestHandler
     }
 
     /// <summary>
+    /// Entfernt eine dauerhaft freigegebene App (PIN-geschützt). Räumt auch eine evtl.
+    /// vorhandene geplante Aufgabe weg.
+    /// </summary>
+    public ElevationResponse RemoveApp(string path, string? pin, string requestingUser)
+    {
+        if (string.IsNullOrEmpty(_cfg.ParentPinHash))
+            return new ElevationResponse { State = RequestState.Denied, Decision = "Policy",
+                Message = "Es ist keine Eltern-PIN gesetzt." };
+        if (string.IsNullOrEmpty(pin) || !Secret.VerifyPin(pin, _cfg.ParentPinHash))
+            return new ElevationResponse { State = RequestState.Denied, Decision = "PinWrong",
+                Message = "Falsche PIN." };
+
+        var app = _cfg.AllowedApps.FirstOrDefault(a =>
+            string.Equals(a.Path, path, StringComparison.OrdinalIgnoreCase));
+        if (app is null)
+            return new ElevationResponse { State = RequestState.Denied, Decision = "Policy",
+                Message = "Diese App ist nicht freigegeben." };
+
+        try { _taskLauncher.Unregister(app); } catch { }
+
+        Elevator.EnsureNotImpersonating();
+        var removed = _cfg.RemoveAllowedApp(path);
+        _log.Write("app.removed", new { app.Name, path, by = requestingUser, removed });
+        ReportRegisteredGames();   // Add-on-Übersicht aktualisieren
+        return new ElevationResponse { State = RequestState.Approved, Decision = "Removed",
+            Message = $"{app.Name} wurde entfernt." };
+    }
+
+    /// <summary>
+    /// Entfernt freigegebene Apps per NAME (vom Add-on-Dashboard angestoßen). Die
+    /// Autorisierung erfolgt dort (Dashboard-PIN), daher hier ohne PIN-Prüfung.
+    /// </summary>
+    public void RemoveAppsByName(IEnumerable<string> names)
+    {
+        Elevator.EnsureNotImpersonating();
+        foreach (var name in names)
+        {
+            var app = _cfg.AllowedApps.FirstOrDefault(a =>
+                string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (app is null) continue;
+            try { _taskLauncher.Unregister(app); } catch { }
+            _cfg.RemoveAllowedApp(app.Path);
+            _log.Write("app.removed", new { app.Name, app.Path, by = "server-dashboard" });
+        }
+        ReportRegisteredGames();
+    }
+
+    /// <summary>
     /// Startet den Windows-Dienst kurz neu, damit geänderte Einstellungen (Modus,
     /// Server-Adresse/Token) wirksam werden. Läuft über eine losgelöste cmd, die erst
     /// wartet (damit die Antwort noch zum Client geht) und dann sc stop/start macht.

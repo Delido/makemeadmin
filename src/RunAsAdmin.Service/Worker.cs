@@ -60,6 +60,10 @@ public sealed class Worker : BackgroundService
         var handler = new RequestHandler(cfg, log, approver, timeAdmin);
         var pipe = new PipeServer(cfg, log, handler);
 
+        // Server-Modus: App-Entfernungen vom Dashboard an den Handler durchreichen.
+        if (approver is ServerApprover sa)
+            sa.OnRemoveGames = names => handler.RemoveAppsByName(names);
+
         // Dem Server/HA die aktuell freigegebenen Spiele melden (Dashboard-Übersicht).
         handler.ReportRegisteredGames();
 

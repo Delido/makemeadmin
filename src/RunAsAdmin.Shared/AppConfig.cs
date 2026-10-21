@@ -108,6 +108,21 @@ public sealed class AppConfig
         }
     }
 
+    /// <summary>
+    /// Entfernt ein freigegebenes Programm (per Pfad) und speichert. Threadsicher.
+    /// Gibt true zurück, wenn etwas entfernt wurde.
+    /// </summary>
+    public bool RemoveAllowedApp(string path)
+    {
+        lock (_saveGate)
+        {
+            var removed = AllowedApps.RemoveAll(a =>
+                string.Equals(a.Path, path, StringComparison.OrdinalIgnoreCase));
+            if (removed > 0 && !string.IsNullOrEmpty(SourcePath)) Save(SourcePath);
+            return removed > 0;
+        }
+    }
+
     public static string Serialize(object value) => JsonSerializer.Serialize(value, JsonOptions);
     public static T? Deserialize<T>(string json) => JsonSerializer.Deserialize<T>(json, JsonOptions);
 

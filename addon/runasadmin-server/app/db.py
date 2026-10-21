@@ -40,6 +40,12 @@ CREATE TABLE IF NOT EXISTS cancels (
     computer TEXT PRIMARY KEY,   -- offener Not-Aus; vom PC beim Pollen abgeholt
     requested INTEGER
 );
+CREATE TABLE IF NOT EXISTS removals (
+    computer TEXT,               -- offene App-Entfernung; vom PC abgeholt
+    game TEXT,
+    requested INTEGER,
+    PRIMARY KEY (computer, game)
+);
 CREATE TABLE IF NOT EXISTS game_launches (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     computer TEXT,
@@ -163,6 +169,28 @@ def take_cancel(computer):
             c.execute("DELETE FROM cancels WHERE computer=?", (computer,))
             return True
     return False
+
+
+def request_remove(computer, game):
+    """Dashboard moechte eine App-Freigabe auf einem PC entfernen."""
+    with conn() as c:
+        c.execute(
+            "INSERT INTO removals(computer,game,requested) VALUES(?,?,?) "
+            "ON CONFLICT(computer,game) DO UPDATE SET requested=excluded.requested",
+            (computer, game, int(time.time())),
+        )
+
+
+def take_removals(computer):
+    """Holt offene Entfernungs-Wuensche eines PCs ab und loescht sie (Liste der Namen)."""
+    with conn() as c:
+        rows = c.execute(
+            "SELECT game FROM removals WHERE computer=?", (computer,)
+        ).fetchall()
+        names = [r["game"] for r in rows]
+        if names:
+            c.execute("DELETE FROM removals WHERE computer=?", (computer,))
+    return names
 
 
 def active_sessions():

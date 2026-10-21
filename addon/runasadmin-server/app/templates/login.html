@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RunAsAdmin – Anmeldung</title>
+  <style>
+    :root { --bg:#0E1116; --card:#1A202A; --stroke:#ffffff22; --text:#E6E9EE; --muted:#8A93A1; --accent:#2FBF71; --deny:#E05A4A; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text);
+           font-family:'Segoe UI',system-ui,sans-serif;
+           display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px; }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px;
+            padding:28px 26px; width:100%; max-width:360px; text-align:center; }
+    h1 { font-size:20px; margin:0 0 6px; }
+    .sub { color:var(--muted); font-size:13px; margin-bottom:18px; }
+    input[type=password] { width:100%; background:#0E1116; border:1px solid var(--stroke);
+            border-radius:10px; color:#fff; font-size:16px; padding:11px 12px; text-align:center;
+            letter-spacing:3px; }
+    button { margin-top:14px; width:100%; border:none; border-radius:10px; background:var(--accent);
+             color:#fff; font-size:15px; font-weight:600; padding:11px; cursor:pointer; }
+    .err { color:var(--deny); font-size:13px; margin-top:12px; }
+  </style>
+</head>
+<body>
+  <form class="card" method="post" action="login">
+    <div style="font-size:34px">🛡️</div>
+    <h1>RunAsAdmin</h1>
+    <div class="sub">Bitte Eltern-PIN eingeben, um das Dashboard zu öffnen.</div>
+    <input type="password" name="pin" inputmode="numeric" autofocus placeholder="PIN">
+    <button type="submit">Anmelden</button>
+    {% if fehler %}<div class="err">Falsche PIN. Bitte erneut versuchen.</div>{% endif %}
+  </form>
+</body>
+</html>

@@ -130,21 +130,42 @@ public sealed class ServerApprover : IApprover
                 using var content = new StringContent(AppConfig.SerializeCompact(body),
                     Encoding.UTF8, "application/json");
                 var resp = await _http.PostAsync(Url("/api/cancel-status"), content, ct);
-                if (!resp.IsSuccessStatusCode) continue;
-                var json = await resp.Content.ReadAsStringAsync(ct);
-                var parsed = AppConfig.Deserialize<CancelResponse>(json);
-                if (parsed?.Cancel == true)
+                if (resp.IsSuccessStatusCode)
                 {
-                    _log.Write("timeadmin.cancel_requested", new { by = "server" });
-                    try { OnCancel?.Invoke(); } catch { }
+                    var json = await resp.Content.ReadAsStringAsync(ct);
+                    var parsed = AppConfig.Deserialize<CancelResponse>(json);
+                    if (parsed?.Cancel == true)
+                    {
+                        _log.Write("timeadmin.cancel_requested", new { by = "server" });
+                        try { OnCancel?.Invoke(); } catch { }
+                    }
+                }
+
+                // Zusätzlich: offene App-Entfernungen vom Dashboard abholen.
+                using var rc = new StringContent(AppConfig.SerializeCompact(body),
+                    Encoding.UTF8, "application/json");
+                var rresp = await _http.PostAsync(Url("/api/remove-status"), rc, ct);
+                if (rresp.IsSuccessStatusCode)
+                {
+                    var rjson = await rresp.Content.ReadAsStringAsync(ct);
+                    var rparsed = AppConfig.Deserialize<RemoveResponse>(rjson);
+                    if (rparsed?.Remove is { Count: > 0 } names)
+                    {
+                        _log.Write("app.remove_requested", new { by = "server", names });
+                        try { OnRemoveGames?.Invoke(names); } catch { }
+                    }
                 }
             }
             catch { /* Add-on evtl. offline – egal, nächster Versuch */ }
         }
     }
 
+    /// <summary>Wird ausgelöst, wenn das Dashboard App-Freigaben entfernen will (Namen).</summary>
+    public Action<List<string>>? OnRemoveGames { get; set; }
+
     private sealed class StatusResponse { public string? Status { get; set; } }
     private sealed class CancelResponse { public bool Cancel { get; set; } }
+    private sealed class RemoveResponse { public List<string>? Remove { get; set; } }
 
     public async ValueTask DisposeAsync()
     {

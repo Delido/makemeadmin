@@ -99,16 +99,26 @@
       {% endif %}
     </div>
     <div class="card">
-      <h2>Freigegebene Spiele je PC</h2>
+      <h2>Freigegebene Apps je PC</h2>
       {% if reg_games %}
         {% for computer, games in reg_games.items() %}
-        <div class="ev">
-          <span class="t">{{ computer }}</span>
-          <span>{{ games | join(', ') }}</span>
+        <div style="margin-bottom:10px;">
+          <div class="muted" style="font-size:12px;margin-bottom:4px;">{{ computer }}</div>
+          {% for game in games %}
+          <div class="req" style="padding:5px 0;">
+            <span>{{ game }}</span>
+            <form method="post" action="remove-game" style="margin:0;"
+                  onsubmit="return confirm('Freigabe von {{ game }} auf {{ computer }} entfernen?');">
+              <input type="hidden" name="computer" value="{{ computer }}">
+              <input type="hidden" name="game" value="{{ game }}">
+              <button class="deny" style="padding:5px 10px;font-size:12px;">Entfernen</button>
+            </form>
+          </div>
+          {% endfor %}
         </div>
         {% endfor %}
       {% else %}
-        <div class="muted">Noch keine Spiele dauerhaft freigegeben.</div>
+        <div class="muted">Noch keine Apps dauerhaft freigegeben.</div>
       {% endif %}
     </div>
   </div>
