@@ -1,7 +1,11 @@
-#!/usr/bin/with-contenv bashio
-# Optionen aus der Add-on-Config lesen und als Umgebungsvariablen bereitstellen.
-export RAA_PC_TOKEN="$(bashio::config 'pc_token')"
-export RAA_NOTIFY_SERVICE="$(bashio::config 'notify_service')"
+#!/usr/bin/env bash
+# Add-on-Optionen aus /data/options.json lesen und als Umgebungsvariablen setzen.
+set -e
+
+OPTIONS=/data/options.json
+
+export RAA_PC_TOKEN="$(jq -r '.pc_token // ""' "$OPTIONS")"
+export RAA_NOTIFY_SERVICE="$(jq -r '.notify_service // ""' "$OPTIONS")"
 export RAA_SUPERVISOR_TOKEN="${SUPERVISOR_TOKEN}"
 export RAA_DB="/data/runasadmin.db"
 

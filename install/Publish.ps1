@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Veroeffentlicht Dienst und Client als eigenstaendige exe-Dateien.
+  Veroeffentlicht Dienst, GUI und Installer als eigenstaendige exe-Dateien.
 #>
 [CmdletBinding()]
 param(
@@ -17,7 +17,6 @@ $sc = if ($SelfContained) { "true" } else { "false" }
 $common = @("-c", $Configuration, "-r", "win-x64", "--self-contained", $sc)
 
 dotnet publish "$root\src\RunAsAdmin.Service" @common -o "$root\publish\service"
-dotnet publish "$root\src\RunAsAdmin.Client"  @common -o "$root\publish\client"
 dotnet publish "$root\src\RunAsAdmin.Gui"       @common -o "$root\publish\gui"
 
 # Installer als EINZELNE exe (Single-File) – laeuft allein, ohne DLLs daneben.

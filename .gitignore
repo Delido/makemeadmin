@@ -3,6 +3,8 @@ bin/
 obj/
 publish/
 usb-paket/
+__pycache__/
+*.pyc
 
 # GEHEIMNISSE: echte Konfiguration mit Secret/HA-URL NIE committen
 config/config.json

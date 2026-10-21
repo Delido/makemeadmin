@@ -5,7 +5,6 @@ import hmac
 import httpx
 from fastapi import FastAPI, Request, HTTPException, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
 
 from . import db
@@ -20,7 +19,6 @@ _jinja = Environment(loader=FileSystemLoader("app/templates"), autoescape=True, 
 _jinja.policies["json.dumps_kwargs"] = {"sort_keys": False}
 import json as _json
 _jinja.filters.setdefault("tojson", lambda v, **_: _json.dumps(v))
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
 def _fmt_ts(ts):

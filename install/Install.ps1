@@ -17,7 +17,6 @@ param(
     # Optional explizit setzbar; sonst automatisch aus dem Paket ermittelt.
     [string]$PublishDir,
     [string]$ConfigSource,
-    [string]$ClientPublishDir,
     [string]$GuiPublishDir,
     # Vor der Installation die Programmpfade suchen und in die config eintragen.
     [bool]$FindPaths = $true
@@ -43,7 +42,6 @@ if (-not (Test-Path (Join-Path $PkgRoot "publish"))) {
 }
 
 if (-not $PublishDir)       { $PublishDir       = Join-Path $PkgRoot "publish\service" }
-if (-not $ClientPublishDir) { $ClientPublishDir = Join-Path $PkgRoot "publish\client" }
 if (-not $GuiPublishDir)    { $GuiPublishDir    = Join-Path $PkgRoot "publish\gui" }
 if (-not $ConfigSource)     { $ConfigSource     = Join-Path $PkgRoot "config\config.json" }
 
@@ -63,7 +61,6 @@ if ($FindPaths) {
 }
 
 $InstallDir  = "$env:ProgramFiles\RunAsAdmin"
-$ClientDir   = "$env:ProgramFiles\RunAsAdmin\Client"
 $GuiDir      = "$env:ProgramFiles\RunAsAdmin\Gui"
 $DataDir     = "$env:ProgramData\RunAsAdmin"
 $LogDir      = "$DataDir\logs"
@@ -72,12 +69,11 @@ $ServiceName = "RunAsAdmin"
 $ServiceExe  = "$InstallDir\RunAsAdmin.Service.exe"
 
 Write-Host "Installationsverzeichnis: $InstallDir"
-New-Item -ItemType Directory -Force -Path $InstallDir, $ClientDir, $GuiDir, $DataDir, $LogDir | Out-Null
+New-Item -ItemType Directory -Force -Path $InstallDir, $GuiDir, $DataDir, $LogDir | Out-Null
 
 # --- Dateien kopieren ---
 if (-not (Test-Path $PublishDir)) { throw "PublishDir nicht gefunden: $PublishDir. Erst Publish.ps1 ausfuehren." }
 Copy-Item "$PublishDir\*" $InstallDir -Recurse -Force
-if (Test-Path $ClientPublishDir) { Copy-Item "$ClientPublishDir\*" $ClientDir -Recurse -Force }
 if (Test-Path $GuiPublishDir)    { Copy-Item "$GuiPublishDir\*"    $GuiDir    -Recurse -Force }
 
 # --- Konfiguration installieren (nicht ueberschreiben, falls vorhanden) ---
@@ -116,7 +112,7 @@ function Set-HardenedAcl {
     }
 
     if (-not $DenyUsers) {
-        # Authentifizierte Benutzer: nur Lesen/Ausfuehren (config.json lesbar fuer Client)
+        # Authentifizierte Benutzer: nur Lesen/Ausfuehren (config.json lesbar fuer GUI)
         $usersSid = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-11")
         $read = [System.Security.AccessControl.FileSystemRights]"ReadAndExecute"
         $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
@@ -172,7 +168,7 @@ try {
 }
 
 # --- Explorer-Rechtsklick auf .exe: "Mit Adminrechten anfragen" ---
-# Ruft den Client auf, der die Datei zur Freigabe an den Dienst schickt.
+# Ruft die GUI auf, die die Anfrage an den Dienst schickt.
 try {
     $guiExe = "$GuiDir\RunAsAdmin.Gui.exe"
     $key = "Registry::HKEY_CLASSES_ROOT\exefile\shell\RunAsAdminRequest"

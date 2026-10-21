@@ -14,7 +14,6 @@ public sealed class Installer
     private readonly string _programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
 
     private string InstallDir => Path.Combine(_programFiles, "RunAsAdmin");
-    private string ClientDir => Path.Combine(InstallDir, "Client");
     private string GuiDir => Path.Combine(InstallDir, "Gui");
     private string DataDir => Path.Combine(_programData, "RunAsAdmin");
     private string LogDir => Path.Combine(DataDir, "logs");
@@ -57,7 +56,6 @@ public sealed class Installer
     private void CopyFiles()
     {
         var pubService = Path.Combine(PayloadDir, "service");
-        var pubClient = Path.Combine(PayloadDir, "client");
         var pubGui = Path.Combine(PayloadDir, "gui");
         if (!Directory.Exists(pubService))
             throw new DirectoryNotFoundException(
@@ -67,7 +65,6 @@ public sealed class Installer
         TryStopService();
 
         CopyDir(pubService, InstallDir);
-        if (Directory.Exists(pubClient)) CopyDir(pubClient, ClientDir);
         if (Directory.Exists(pubGui)) CopyDir(pubGui, GuiDir);
         Step("Programmdateien kopiert.");
     }

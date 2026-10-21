@@ -1,12 +1,10 @@
-ARG BUILD_FROM
-FROM $BUILD_FROM
+FROM python:3.12-alpine
 
-# Python + Abhaengigkeiten
-RUN apk add --no-cache python3 py3-pip
+RUN apk add --no-cache bash jq tzdata
 
 WORKDIR /app
 COPY requirements.txt /app/
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 COPY app /app/app
 COPY run.sh /run.sh
