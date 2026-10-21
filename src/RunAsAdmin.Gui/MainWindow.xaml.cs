@@ -298,6 +298,31 @@ public partial class MainWindow : Window
         {
             var resp = await PipeClient.LaunchGameAsync(path);
             var ok = resp.State == RequestState.Approved;
+
+            // Neuer Weg: Der Dienst hat das Kind kurz zum Admin gemacht und gibt den
+            // Pfad zurück. Die GUI startet das Programm SELBST in ihrer sichtbaren
+            // Sitzung (als das – jetzt erhöhte – Kind). So umgehen wir die Session-0-
+            // Unsichtbarkeit komplett.
+            if (ok && resp.Decision == "GameClientLaunch" && !string.IsNullOrEmpty(resp.LaunchPath))
+            {
+                try
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = resp.LaunchPath,
+                        Arguments = resp.LaunchArgs ?? "",
+                        WorkingDirectory = System.IO.Path.GetDirectoryName(resp.LaunchPath) ?? "",
+                        UseShellExecute = true,   // startet im Benutzer-Desktop, sichtbar
+                    };
+                    System.Diagnostics.Process.Start(psi);
+                }
+                catch (Exception ex)
+                {
+                    ShowOverlay("🚫", "Start fehlgeschlagen", ex.Message, waiting: false);
+                    return;
+                }
+            }
+
             ShowOverlay(ok ? "✅" : "🚫", ok ? "Viel Spaß!" : "Start fehlgeschlagen",
                 resp.Message, waiting: false);
         }

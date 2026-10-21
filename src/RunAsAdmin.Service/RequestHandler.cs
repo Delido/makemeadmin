@@ -471,10 +471,12 @@ public sealed class RequestHandler
 
         _log.Write("game.launch_requested", new { app.Name, requestingUser });
 
-        // KONZEPT (bewährt): Das Kind wird für diese freigegebene App KURZ (AppAdminMinutes)
-        // global Administrator – ohne Eltern-Freigabe, weil die App vorab dauerhaft erlaubt
-        // wurde. So startet das Programm erhöht im ECHTEN Kind-Kontext (sichtbar, richtiges
-        // Profil, Anti-Cheat-tauglich). Danach werden die Rechte automatisch wieder entzogen.
+        // KONZEPT: Das Kind wird für diese freigegebene App KURZ (AppAdminMinutes)
+        // global Administrator – ohne Eltern-Freigabe, weil die App vorab dauerhaft
+        // erlaubt wurde. Der Dienst startet die App aber NICHT selbst (das würde aus
+        // Session 0 unsichtbar bleiben) – stattdessen startet die GUI das Programm
+        // selbst in ihrer sichtbaren Sitzung. Da das Kind jetzt Admin ist, läuft es
+        // dort erhöht. Nach AppAdminMinutes automatischer Entzug (Timer).
         var (grantOk, grantMsg) = _timeAdmin.GrantForAppLaunch(AppAdminMinutes, app.Name);
         if (!grantOk)
         {
@@ -483,21 +485,16 @@ public sealed class RequestHandler
                 Message = $"Adminrechte konnten nicht erteilt werden: {grantMsg}" };
         }
 
-        // Programm im Kind-Kontext starten (das Kind ist jetzt kurz Admin -> erhöht,
-        // sichtbar, kein UAC). Der Start läuft im normalen Benutzerkontext der Sitzung.
-        var launch = _elevator.LaunchElevated(app.Path, app.Arguments, null,
-            step => _log.Write("game.launch_step", new { app.Name, step }));
-        if (launch.Ok)
+        _log.Write("game.admin_ready", new { app.Name, adminMinutes = AppAdminMinutes });
+        // Der Client (GUI) startet das Programm selbst – Pfad + Args zurückgeben.
+        return new ElevationResponse
         {
-            _log.Write("game.launched", new { game = app.Name, user = requestingUser, launch.ProcessId, adminMinutes = AppAdminMinutes });
-            _log.Write("launch.success", new { app.Name, via = "shortadmin", decision = "Game" });
-            return new ElevationResponse { State = RequestState.Approved, Decision = "Game",
-                Message = $"{app.Name} wird gestartet." };
-        }
-
-        _log.Write("game.launch_failed", new { app.Name, detail = launch.Detail });
-        return new ElevationResponse { State = RequestState.Error, Decision = "Game",
-            Message = $"Start fehlgeschlagen: {launch.Detail}" };
+            State = RequestState.Approved,
+            Decision = "GameClientLaunch",   // Signal an die GUI: du startest selbst
+            Message = $"{app.Name} wird gestartet.",
+            LaunchPath = app.Path,
+            LaunchArgs = app.Arguments,
+        };
     }
 
     /// <summary>

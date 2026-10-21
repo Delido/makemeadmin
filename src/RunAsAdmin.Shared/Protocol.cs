@@ -176,6 +176,13 @@ public sealed class ElevationResponse
 
     /// <summary>Wie die Entscheidung zustande kam: Auto, HomeAssistant, Timeout, Policy.</summary>
     public string Decision { get; set; } = "";
+
+    /// <summary>
+    /// Bei Decision="GameClientLaunch": Pfad des Programms, das die GUI SELBST starten
+    /// soll (das Kind ist dann kurz Admin -> erhöht + sichtbar in seiner Sitzung).
+    /// </summary>
+    public string? LaunchPath { get; set; }
+    public string? LaunchArgs { get; set; }
 }
 
 /// <summary>Nachricht, die der Dienst an Home Assistant schickt.</summary>
