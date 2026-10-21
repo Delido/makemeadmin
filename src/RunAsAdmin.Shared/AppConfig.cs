@@ -106,6 +106,14 @@ public sealed class AppConfig
     public static string SerializeCompact(object value) => JsonSerializer.Serialize(value, CompactOptions);
 }
 
+/// <summary>Grobe Art eines freigegebenen Programms – nur für Anzeige/Gruppierung.</summary>
+public enum AppCategory
+{
+    Spiel,
+    Tool,
+    Sonstiges,
+}
+
 /// <summary>Regel für ein freigegebenes Programm.</summary>
 public sealed class AllowedApp
 {
@@ -114,6 +122,9 @@ public sealed class AllowedApp
 
     /// <summary>Vollständiger Pfad zur ausführbaren Datei.</summary>
     public string Path { get; set; } = "";
+
+    /// <summary>Art des Programms (nur Anzeige): Spiel, Tool oder Sonstiges.</summary>
+    public AppCategory Category { get; set; } = AppCategory.Sonstiges;
 
     /// <summary>Optionale Startargumente.</summary>
     public string? Arguments { get; set; }

@@ -19,9 +19,9 @@ Es gibt zwei Wege, die sich ergänzen:
 
 ![RunAsAdmin – die App auf dem Kinder-PC](assets/screenshot.png)
 
-Die App auf dem Kinder-PC: Seitenleiste (Start · Spiele · Verlauf · Status · Eltern).
-Hier der Reiter „Spiele" – dauerhaft freigegebene Spiele startet das Kind per Klick
-erhöht, ohne UAC und ohne Admin zu werden.
+Die App auf dem Kinder-PC: Seitenleiste (Start · Apps · Verlauf · Status · Eltern).
+Hier der Reiter „Apps" – dauerhaft freigegebene Programme (Spiele und Tools) startet
+das Kind per Klick erhöht, ohne UAC und ohne Admin zu werden.
 
 ---
 
@@ -29,7 +29,7 @@ erhöht, ohne UAC und ohne Admin zu werden.
 
 | Weg | Wofür | Wie freigegeben |
 |-----|-------|-----------------|
-| **Spiel dauerhaft** | tägliche Spiele / Tools mit Admin-Bedarf | einmalig „Immer erlauben" → Reiter *Spiele* + Tray |
+| **App dauerhaft** | tägliche Spiele / Tools mit Admin-Bedarf | einmalig „Immer erlauben" → Reiter *Apps* + Tray |
 | **15 Min Admin** | einmalige Ausnahmen (installieren usw.) | pro Anfrage per Handy / Dashboard / PIN |
 
 ### Anbindung (umschaltbar in den Einstellungen)
@@ -52,8 +52,9 @@ erhöht, ohne UAC und ohne Admin zu werden.
 3. Der Dienst legt für dieses Spiel eine **geplante Aufgabe** an (läuft als der
    angemeldete Benutzer mit höchsten Rechten) und sichert die Datei per
    **Hash/Herausgeber** gegen Austausch ab.
-4. Das Spiel erscheint im Reiter **„Spiele"** und im **Tray-Menü**. Ab jetzt startet
-   das Kind es dort per Klick – erhöht, ohne UAC, nur dieses eine Programm.
+4. Das Programm erscheint im Reiter **„Apps"** (als Spiel oder Tool) und im
+   **Tray-Menü**. Ab jetzt startet das Kind es dort per Klick – erhöht, ohne UAC, nur
+   dieses eine Programm.
 
 ## Ablauf: Adminrechte auf Zeit (15 Min)
 
@@ -72,7 +73,7 @@ erhöht, ohne UAC und ohne Admin zu werden.
 | Teil | Projekt | Läuft wo |
 |------|---------|----------|
 | **Dienst** (Anfragen, Admin-Zeit, Spiele-Start, Protokoll) | `src/RunAsAdmin.Service` | als SYSTEM auf jedem Kinder-PC |
-| **GUI** (Tray + Fenster: Start, Spiele, Verlauf, Status, Eltern) | `src/RunAsAdmin.Gui` | als das Kind auf dem Kinder-PC |
+| **GUI** (Tray + Fenster: Start, Apps, Verlauf, Status, Eltern) | `src/RunAsAdmin.Gui` | als das Kind auf dem Kinder-PC |
 | **Installer** (Single-File-Setup, Deinstaller, Cleanup) | `src/RunAsAdmin.Installer` | einmal pro PC |
 | Gemeinsames Modell, Verschlüsselung, Update | `src/RunAsAdmin.Shared` | – |
 | **Home Assistant** (Automationen, Dashboard) | `homeassistant/` | dein HA-Server |

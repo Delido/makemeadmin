@@ -300,6 +300,7 @@ public sealed class RequestHandler
                 {
                     Name = app.Name,
                     Path = app.Path,
+                    Category = GuessCategory(app.Path),
                     AutoApprove = true,               // künftig grüne Kachel, sofort
                     ExpectedPublisher = app.ExpectedPublisher,
                     ExpectedSha256 = string.IsNullOrEmpty(app.ExpectedPublisher)
@@ -396,6 +397,23 @@ public sealed class RequestHandler
         var (regOk, regMsg) = _taskLauncher.Register(app, acct);
         if (!regOk) return (false, regMsg);
         return _taskLauncher.Launch(app);
+    }
+
+    /// <summary>
+    /// Grobe Einordnung beim ersten Freigeben (nur Anzeige): Pfad-Merkmale deuten auf
+    /// ein Spiel (Steam/Epic/Riot/Games-Ordner) hin, sonst Tool. Der Elternteil kann
+    /// die Kategorie später in der GUI ändern.
+    /// </summary>
+    private static AppCategory GuessCategory(string path)
+    {
+        var p = (path ?? "").ToLowerInvariant();
+        string[] gameHints =
+        {
+            "steam", "steamapps", "epic games", "epicgames", "riot games", "riotgames",
+            "ubisoft", "ea games", "ea\\", "\\games\\", "battle.net", "gog galaxy",
+            "fortnite", "minecraft", "roblox",
+        };
+        return gameHints.Any(h => p.Contains(h)) ? AppCategory.Spiel : AppCategory.Tool;
     }
 
     /// <summary>Kontoname (Domain\\User) der aktiven Sitzung für die Aufgabe, oder null.</summary>
@@ -696,6 +714,7 @@ public sealed class RequestHandler
             {
                 Name = a.Name,
                 Path = a.Path,
+                Category = a.Category,
                 AutoApprove = a.AutoApprove,
                 Reason = a.Reason,
                 Available = !string.IsNullOrWhiteSpace(a.Path) && File.Exists(a.Path),

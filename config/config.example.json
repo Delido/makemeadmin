@@ -21,12 +21,14 @@
     {
       "Name": "UniGetUI",
       "Path": "",
+      "Category": "Tool",
       "AutoApprove": true,
       "Reason": "App-Updates/Installationen benoetigen Adminrechte."
     },
     {
       "Name": "SignalRGB",
       "Path": "",
+      "Category": "Tool",
       "AutoApprove": false,
       "Reason": "Update benoetigt Adminrechte."
     }

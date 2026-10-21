@@ -34,7 +34,7 @@ public partial class MainWindow : Window
         PageStatus.Visibility = NavStatus.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
 
         if (NavStart.IsChecked == true) PageTitle.Text = "Start";
-        else if (NavGames.IsChecked == true) { PageTitle.Text = "Spiele"; _ = LoadGamesAsync(); }
+        else if (NavGames.IsChecked == true) { PageTitle.Text = "Apps"; _ = LoadGamesAsync(); }
         else if (NavHistory.IsChecked == true) { PageTitle.Text = "Verlauf"; _ = LoadHistoryAsync(); }
         else if (NavStatus.IsChecked == true) { PageTitle.Text = "Status"; _ = LoadStatusAsync(); }
         else if (NavSettings.IsChecked == true)
@@ -205,11 +205,30 @@ public partial class MainWindow : Window
             GamesList.Items.Add(GameTile(g));
     }
 
+    private static string CategoryIcon(AppCategory c) => c switch
+    {
+        AppCategory.Spiel => "🎮",
+        AppCategory.Tool => "🛠️",
+        _ => "📦",
+    };
+
     private UIElement GameTile(AppInfo g)
     {
         var grid = new Grid { Margin = new Thickness(0, 0, 0, 10) };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        // Kategorie-Icon
+        var icon = new TextBlock
+        {
+            Text = CategoryIcon(g.Category),
+            FontSize = 22,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 14, 0),
+        };
+        Grid.SetColumn(icon, 0);
+        grid.Children.Add(icon);
 
         var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         info.Children.Add(new TextBlock
@@ -220,17 +239,17 @@ public partial class MainWindow : Window
         });
         info.Children.Add(new TextBlock
         {
-            Text = g.Available ? "Dauerhaft freigegeben" : "Datei nicht gefunden",
+            Text = g.Available ? $"{g.Category} · dauerhaft freigegeben" : "Datei nicht gefunden",
             Foreground = new SolidColorBrush(g.Available
                 ? Color.FromRgb(0x2F, 0xBF, 0x71) : Color.FromRgb(0xE0, 0x5A, 0x4A)),
             FontSize = 12, Margin = new Thickness(0, 2, 0, 0),
         });
-        Grid.SetColumn(info, 0);
+        Grid.SetColumn(info, 1);
         grid.Children.Add(info);
 
         var btn = new Button
         {
-            Content = "▶  Spielen",
+            Content = g.Category == AppCategory.Spiel ? "▶  Spielen" : "▶  Starten",
             IsEnabled = g.Available,
             Cursor = System.Windows.Input.Cursors.Hand,
             Foreground = System.Windows.Media.Brushes.White,
@@ -241,7 +260,7 @@ public partial class MainWindow : Window
             Tag = g.Path,
         };
         btn.Click += Game_Play;
-        Grid.SetColumn(btn, 1);
+        Grid.SetColumn(btn, 2);
         grid.Children.Add(btn);
 
         return new Border
@@ -259,7 +278,7 @@ public partial class MainWindow : Window
     private async void Game_Play(object sender, RoutedEventArgs e)
     {
         if (sender is not Button b || b.Tag is not string path || string.IsNullOrEmpty(path)) return;
-        ShowOverlay("🎮", "Spiel wird gestartet…", "", waiting: true);
+        ShowOverlay("🚀", "Wird gestartet…", "", waiting: true);
         try
         {
             var resp = await PipeClient.LaunchGameAsync(path);

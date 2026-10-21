@@ -38,7 +38,7 @@ public partial class App : System.Windows.Application
         _tray.DoubleClick += (_, _) => ShowWindow();
 
         var menu = new WinForms.ContextMenuStrip();
-        var gamesMenu = new WinForms.ToolStripMenuItem("Spiele starten");
+        var gamesMenu = new WinForms.ToolStripMenuItem("Apps starten");
         menu.Items.Add(gamesMenu);
         menu.Items.Add("Fenster öffnen…", null, (_, _) => ShowWindow());
         menu.Items.Add("Einstellungen (Eltern)…", null, (_, _) => ShowSettings());
@@ -82,7 +82,13 @@ public partial class App : System.Windows.Application
 
         foreach (var g in games)
         {
-            var item = new WinForms.ToolStripMenuItem(g.Name) { Enabled = g.Available };
+            var icon = g.Category switch
+            {
+                RunAsAdmin.Shared.AppCategory.Spiel => "🎮 ",
+                RunAsAdmin.Shared.AppCategory.Tool => "🛠️ ",
+                _ => "📦 ",
+            };
+            var item = new WinForms.ToolStripMenuItem(icon + g.Name) { Enabled = g.Available };
             var path = g.Path;
             item.Click += async (_, _) =>
             {

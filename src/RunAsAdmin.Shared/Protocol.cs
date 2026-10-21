@@ -131,6 +131,8 @@ public sealed class AppInfo
     public string Name { get; set; } = "";
     /// <summary>Pfad der .exe – dient der GUI als Kennung zum Starten (LaunchGame).</summary>
     public string Path { get; set; } = "";
+    /// <summary>Art des Programms (Spiel/Tool/Sonstiges) – nur Anzeige.</summary>
+    public AppCategory Category { get; set; } = AppCategory.Sonstiges;
     public bool AutoApprove { get; set; }
     public string? Reason { get; set; }
     /// <summary>true, wenn die Datei am hinterlegten Pfad existiert.</summary>
