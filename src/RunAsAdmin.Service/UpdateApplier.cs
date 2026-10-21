@@ -14,6 +14,46 @@ namespace RunAsAdmin.Service;
 [SupportedOSPlatform("windows")]
 public static class UpdateApplier
 {
+    /// <summary>
+    /// Sicherer Update-Weg: Der DIENST lädt das Update selbst von GitHub (nicht der
+    /// Client), vergleicht die Version und spielt nur ein, wenn es wirklich neuer ist.
+    /// So kann KEIN manipuliertes ZIP vom Kind eingeschleust werden.
+    /// </summary>
+    public static ElevationResponse CheckAndApply(AuditLog log)
+    {
+        try
+        {
+            var current = typeof(UpdateApplier).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+            var info = Updater.CheckAsync(current).GetAwaiter().GetResult();
+            if (!info.Available || info.DownloadUrl is null)
+            {
+                log.Write("update.none", new { current, latest = info.LatestVersion });
+                return new ElevationResponse { State = RequestState.Approved, Decision = "Update",
+                    Message = "Keine neuere Version." };
+            }
+
+            // Download NUR von der offiziellen GitHub-Release-URL erlauben.
+            if (!info.DownloadUrl.StartsWith(
+                    $"https://github.com/{Updater.Owner}/{Updater.Repo}/releases/download/",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                log.Write("update.rejected", new { reason = "URL nicht von GitHub-Release", info.DownloadUrl });
+                return Fail("Update-Quelle nicht vertrauenswürdig.");
+            }
+
+            var dir = Path.Combine(Path.GetTempPath(), "RunAsAdminUpdateSvc");
+            try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch { }
+            var zipPath = Updater.DownloadAsync(info.DownloadUrl, dir).GetAwaiter().GetResult();
+            log.Write("update.downloaded", new { info.LatestVersion, zipPath });
+            return Apply(zipPath, log);
+        }
+        catch (Exception ex)
+        {
+            log.Write("update.check_failed", new { error = ex.Message });
+            return Fail($"Update-Prüfung fehlgeschlagen: {ex.Message}");
+        }
+    }
+
     public static ElevationResponse Apply(string zipPath, AuditLog log)
     {
         try

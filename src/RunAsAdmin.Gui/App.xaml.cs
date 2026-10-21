@@ -105,15 +105,13 @@ public partial class App : System.Windows.Application
             var current = System.Reflection.Assembly.GetExecutingAssembly()
                 .GetName().Version?.ToString(3) ?? "1.0.0";
             var info = await RunAsAdmin.Shared.Updater.CheckAsync(current);
-            if (!info.Available || info.DownloadUrl is null) return;
+            if (!info.Available) return;
 
-            // Keine Updates während einer aktiven Admin-Zeit einspielen (Dienst-Neustart).
+            // Keine Updates während einer aktiven Admin-Zeit (Dienst-Neustart vermeiden).
             try { if ((await RunAsAdmin.Shared.PipeClient.TimeStatusAsync()).Active) return; } catch { }
 
-            var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "RunAsAdminUpdate");
-            var zip = await RunAsAdmin.Shared.Updater.DownloadAsync(info.DownloadUrl, dir);
-            await RunAsAdmin.Shared.PipeClient.ApplyUpdateAsync(zip);
-            // Der Dienst spielt ein und startet Dienst + Tray-GUI neu.
+            // Der DIENST lädt + prüft + spielt selbst ein (sicher, kein Client-ZIP).
+            await RunAsAdmin.Shared.PipeClient.ApplyUpdateAsync();
         }
         catch { /* still – nächste Stunde erneut */ }
     }

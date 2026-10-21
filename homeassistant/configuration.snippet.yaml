@@ -6,7 +6,7 @@
 # configuration.yaml, NICHT doppelt anlegen, sondern nur die Unterpunkte dort
 # einruecken. Jeder Top-Level-Schluessel darf nur EINMAL vorkommen.
 
-# --- Rueckkanal an den Kinder-PC (Entscheidung Erlauben/Immer/Ablehnen) ---
+# --- Rueckkanal an den Kinder-PC (Entscheidung Erlauben/Immer/Ablehnen + Not-Aus) ---
 rest_command:
   runasadmin_decision:
     url: "{{ callback_url }}"
@@ -16,6 +16,18 @@ rest_command:
       {"RequestId":"{{ request_id }}","Approved":{{ approved | lower }},
        "Persist":{{ persist | lower }},
        "Secret":"{{ secret }}","DecidedBy":"{{ decided_by }}"}
+  # Not-Aus: beendet eine laufende Admin-Zeit sofort (Pfad /cancel/ statt /decision/).
+  runasadmin_cancel:
+    url: "{{ cancel_url }}"
+    method: POST
+    content_type: "application/json"
+    payload: '{"Secret":"{{ secret }}"}'
+
+# --- Not-Aus-Knopf fuers Dashboard ---
+input_button:
+  runasadmin_notaus:
+    name: RunAsAdmin Not-Aus (Adminrechte sofort entziehen)
+    icon: mdi:shield-off
 
 # --- Textspeicher: letzte Anfrage (nur CallbackUrl|Secret) + letztes Ereignis ---
 # runasadmin_last speichert bewusst nur "CallbackUrl|Secret" (unter 255 Zeichen),

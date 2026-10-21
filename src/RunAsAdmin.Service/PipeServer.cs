@@ -108,8 +108,10 @@ public sealed class PipeServer
             }
             else if (msg.Verb == PipeVerb.ApplyUpdate)
             {
-                _log.Write("update.requested", new { by = user, zip = msg.UpdateZipPath });
-                responseObject = UpdateApplier.Apply(msg.UpdateZipPath ?? "", _log);
+                // Sicherheit: der Dienst lädt + prüft das Update SELBST von GitHub.
+                // Ein vom Client mitgeschicktes ZIP wird bewusst ignoriert.
+                _log.Write("update.requested", new { by = user });
+                responseObject = UpdateApplier.CheckAndApply(_log);
             }
             else if (msg.Verb == PipeVerb.PinStatus)
             {

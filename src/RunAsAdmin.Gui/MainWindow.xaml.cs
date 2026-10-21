@@ -185,12 +185,11 @@ public partial class MainWindow : Window
                     : $"Neueste Version: {info.LatestVersion}.", waiting: false);
             return;
         }
-        ShowOverlay("⬇️", $"Update {info.LatestVersion} wird geladen…", info.Notes ?? "", waiting: true);
+        ShowOverlay("⬇️", $"Update {info.LatestVersion} wird eingespielt…", info.Notes ?? "", waiting: true);
         try
         {
-            var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "RunAsAdminUpdate");
-            var zip = await Updater.DownloadAsync(info.DownloadUrl!, dir);
-            var resp = await PipeClient.ApplyUpdateAsync(zip);
+            // Der Dienst lädt + prüft + spielt selbst ein (sicher).
+            var resp = await PipeClient.ApplyUpdateAsync();
             var ok = resp.State == RequestState.Approved;
             ShowOverlay(ok ? "✅" : "🚫", ok ? "Update wird eingespielt" : "Fehlgeschlagen",
                 ok ? "Das Programm startet gleich neu." : resp.Message, waiting: false);

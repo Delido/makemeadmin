@@ -73,6 +73,23 @@
         secret: "{{ sc }}"
         decided_by: "{{ trigger.event.data.sourceDevicePermanentID | default('app') }}"
 
+# 2b) Not-Aus: Button gedrueckt -> laufende Admin-Zeit sofort beenden.
+- id: runasadmin_notaus
+  alias: RunAsAdmin – Not-Aus
+  triggers:
+    - trigger: state
+      entity_id: input_button.runasadmin_notaus
+  actions:
+    - variables:
+        stored: "{{ states('input_text.runasadmin_last') }}"
+        cb: "{{ stored.split('|')[0] }}"
+        sc: "{{ stored.split('|')[1] if '|' in stored else '' }}"
+        cancel_url: "{{ cb | replace('/decision/', '/cancel/') }}"
+    - action: rest_command.runasadmin_cancel
+      data:
+        cancel_url: "{{ cancel_url }}"
+        secret: "{{ sc }}"
+
 # 3) Dienst-Ereignisse ins Logbuch + Statistik (Start, Admin-Zeit, Prozesse)
 - id: runasadmin_event
   alias: RunAsAdmin – Ereignis protokollieren

@@ -40,11 +40,15 @@ public sealed class Worker : BackgroundService
 
         log.Write("service.start", new { configPath = _configPath, apps = cfg.AllowedApps.Count });
 
+        // Alte Protokolldateien aufräumen (älter als 90 Tage).
+        TryRotateLogs(cfg.LogDirectory, keepDays: 90, log);
+
         await using var approver = new HomeAssistantApprover(cfg.HomeAssistant, log);
         try { approver.Start(); }
         catch (Exception ex) { log.Write("service.ha_listener_failed", new { error = ex.Message }); }
 
         using var timeAdmin = new TimeAdminManager(log);
+        approver.OnCancel = () => timeAdmin.Revoke("notaus");   // Not-Aus per Handy
         var handler = new RequestHandler(cfg, log, approver, timeAdmin);
         var pipe = new PipeServer(cfg, log, handler);
 
@@ -64,6 +68,21 @@ public sealed class Worker : BackgroundService
         {
             log.Write("service.stop", new { });
         }
+    }
+
+    /// <summary>Löscht Audit-Dateien, die älter als keepDays sind.</summary>
+    private static void TryRotateLogs(string dir, int keepDays, AuditLog log)
+    {
+        try
+        {
+            if (!Directory.Exists(dir)) return;
+            var cutoff = DateTime.Now.AddDays(-keepDays);
+            foreach (var f in Directory.GetFiles(dir, "audit-*.jsonl"))
+            {
+                try { if (File.GetLastWriteTime(f) < cutoff) File.Delete(f); } catch { }
+            }
+        }
+        catch (Exception ex) { log.Write("log.rotate_failed", new { error = ex.Message }); }
     }
 
     /// <summary>

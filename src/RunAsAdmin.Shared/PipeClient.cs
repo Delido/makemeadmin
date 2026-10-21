@@ -63,11 +63,13 @@ public static class PipeClient
                ?? new SettingsResponse { State = RequestState.Error, Message = "Keine Antwort." };
     }
 
-    /// <summary>Bittet den Dienst (SYSTEM), ein heruntergeladenes Update-ZIP einzuspielen.</summary>
-    public static async Task<ElevationResponse> ApplyUpdateAsync(string zipPath,
-        CancellationToken ct = default)
+    /// <summary>
+    /// Bittet den Dienst (SYSTEM), selbst nach einem Update zu suchen, es von GitHub
+    /// zu laden, zu prüfen und einzuspielen. Der Client lädt bewusst NICHTS selbst.
+    /// </summary>
+    public static async Task<ElevationResponse> ApplyUpdateAsync(CancellationToken ct = default)
     {
-        var line = await SendAsync(new PipeMessage { Verb = PipeVerb.ApplyUpdate, UpdateZipPath = zipPath }, ct);
+        var line = await SendAsync(new PipeMessage { Verb = PipeVerb.ApplyUpdate }, ct);
         return (line is null ? null : AppConfig.Deserialize<ElevationResponse>(line))
                ?? new ElevationResponse { State = RequestState.Error, Message = "Keine Antwort erhalten." };
     }

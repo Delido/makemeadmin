@@ -137,7 +137,8 @@ public sealed class Installer
         {
             var cfg = AppConfig.Load(ConfigDest);
             var p = cfg.HomeAssistant.CallbackPort;
-            foreach (var (port, path) in new[] { (p, "decision"), (p + 1, "trigger") })
+            // decision + cancel auf CallbackPort, trigger auf CallbackPort+1.
+            foreach (var (port, path) in new[] { (p, "decision"), (p, "cancel"), (p + 1, "trigger") })
             {
                 Run("netsh", $"http add urlacl url=http://+:{port}/{path}/ user=\"NT AUTHORITY\\SYSTEM\"", ignoreError: true);
                 // Regel zuerst entfernen (falls mit altem Profil vorhanden), dann für ALLE Profile neu.

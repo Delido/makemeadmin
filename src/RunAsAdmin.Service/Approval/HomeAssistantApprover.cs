@@ -26,10 +26,14 @@ public sealed class HomeAssistantApprover : IAsyncDisposable
         _log = log;
     }
 
+    /// <summary>Wird aufgerufen, wenn HA per /cancel/ einen Not-Aus schickt (Secret geprüft).</summary>
+    public Action? OnCancel { get; set; }
+
     public void Start()
     {
         if (!_cfg.Enabled) return;
         _listener.Prefixes.Add($"http://+:{_cfg.CallbackPort}/decision/");
+        _listener.Prefixes.Add($"http://+:{_cfg.CallbackPort}/cancel/");
         _listener.Start();
         _cts = new CancellationTokenSource();
         _ = Task.Run(() => AcceptLoop(_cts.Token));
@@ -51,12 +55,26 @@ public sealed class HomeAssistantApprover : IAsyncDisposable
                     var body = await reader.ReadToEndAsync(ct);
                     var decision = AppConfig.Deserialize<ApprovalDecision>(body);
 
+                    // Not-Aus: /cancel/ mit korrektem Secret -> laufende Admin-Zeit beenden.
+                    if (ctx.Request.Url?.AbsolutePath.TrimEnd('/').EndsWith("cancel", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        if (decision is not null && FixedEquals(decision.Secret, _cfg.CallbackSecret))
+                        {
+                            _log.Write("timeadmin.cancel_requested", new { by = "homeassistant" });
+                            try { OnCancel?.Invoke(); } catch { }
+                            ctx.Response.StatusCode = (int)HttpStatusCode.OK;
+                        }
+                        else ctx.Response.StatusCode = (int)HttpStatusCode.Forbidden;
+                        ctx.Response.Close();
+                        return;
+                    }
+
                     if (decision is null)
                     {
                         _log.Write("decision.received", new { ok = false, reason = "kein/ungültiges JSON" });
                         ctx.Response.StatusCode = (int)HttpStatusCode.BadRequest;
                     }
-                    else if (!string.Equals(decision.Secret, _cfg.CallbackSecret, StringComparison.Ordinal))
+                    else if (!FixedEquals(decision.Secret, _cfg.CallbackSecret))
                     {
                         _log.Write("decision.received", new { ok = false, reason = "Secret passt nicht", decision.RequestId });
                         ctx.Response.StatusCode = (int)HttpStatusCode.Forbidden;
@@ -114,6 +132,15 @@ public sealed class HomeAssistantApprover : IAsyncDisposable
             _log.Write("approval.timeout", new { ask.RequestId, timeoutSeconds });
             return new ApprovalDecision { RequestId = ask.RequestId, Approved = false, DecidedBy = "timeout" };
         }
+    }
+
+    /// <summary>Zeitkonstanter Vergleich – schützt vor Timing-Angriffen auf das Secret.</summary>
+    private static bool FixedEquals(string? a, string? b)
+    {
+        var ba = System.Text.Encoding.UTF8.GetBytes(a ?? "");
+        var bb = System.Text.Encoding.UTF8.GetBytes(b ?? "");
+        if (ba.Length != bb.Length) return false;
+        return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(ba, bb);
     }
 
     public async ValueTask DisposeAsync()

@@ -29,6 +29,17 @@ views:
         name: Letztes Ereignis
         icon: mdi:history
 
+      # Not-Aus: laufende Adminrechte sofort beenden
+      - type: button
+        name: Not-Aus – Adminrechte sofort entziehen
+        icon: mdi:shield-off
+        tap_action:
+          action: perform-action
+          perform_action: input_button.press
+          target:
+            entity_id: input_button.runasadmin_notaus
+        show_state: false
+
       # Statistik-Kacheln
       - type: horizontal-stack
         cards:
