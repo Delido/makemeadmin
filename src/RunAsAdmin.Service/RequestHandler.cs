@@ -46,6 +46,11 @@ public sealed class RequestHandler
     /// Fordert eine zeitlich befristete Admin-Sitzung an. Immer mit Freigabe über
     /// Home Assistant (nie automatisch), wie vom Besitzer vorgegeben.
     /// </summary>
+    // Rate-Begrenzung: nur eine offene Anfrage, Mindestabstand nach der letzten.
+    private int _requestInFlight;          // 0/1
+    private DateTimeOffset _lastRequestEnd = DateTimeOffset.MinValue;
+    private static readonly TimeSpan MinGap = TimeSpan.FromSeconds(20);
+
     public async Task<TimeAdminResponse> GrantTimeAsync(string requestingUser, string? reason,
         CancellationToken ct)
     {
@@ -59,6 +64,40 @@ public sealed class RequestHandler
                 Message = $"Es läuft schon eine Admin-Zeit (noch {_timeAdmin.RemainingSeconds / 60} Min).",
             };
 
+        // Rate-Limit: läuft schon eine Anfrage? Zu schnell nach der letzten?
+        if (System.Threading.Interlocked.CompareExchange(ref _requestInFlight, 1, 0) != 0)
+            return new TimeAdminResponse
+            {
+                State = RequestState.Denied, Decision = "RateLimited",
+                Message = "Es läuft bereits eine Anfrage. Bitte warte, bis Papa geantwortet hat.",
+            };
+        var sinceLast = DateTimeOffset.Now - _lastRequestEnd;
+        if (sinceLast < MinGap)
+        {
+            _requestInFlight = 0;
+            var wait = (int)(MinGap - sinceLast).TotalSeconds + 1;
+            _log.Write("timeadmin.rate_limited", new { requestingUser, waitSeconds = wait });
+            return new TimeAdminResponse
+            {
+                State = RequestState.Denied, Decision = "RateLimited",
+                Message = $"Zu viele Anfragen. Bitte {wait} Sekunden warten.",
+            };
+        }
+
+        try
+        {
+            return await GrantTimeInnerAsync(requestId, requestingUser, reason, ct);
+        }
+        finally
+        {
+            _lastRequestEnd = DateTimeOffset.Now;
+            _requestInFlight = 0;
+        }
+    }
+
+    private async Task<TimeAdminResponse> GrantTimeInnerAsync(string requestId, string requestingUser,
+        string? reason, CancellationToken ct)
+    {
         if (!_cfg.HomeAssistant.Enabled)
             return new TimeAdminResponse
             {

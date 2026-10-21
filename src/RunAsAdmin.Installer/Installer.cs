@@ -184,8 +184,18 @@ public sealed class Installer
         System.Threading.Thread.Sleep(800);
         Run("sc", $"create {ServiceName} binPath= \"{ServiceExe}\" start= auto DisplayName= \"RunAsAdmin (kontrollierte Rechteerhoehung)\"");
         Run("sc", $"description {ServiceName} \"Startet freigegebene Programme fuer Standardbenutzer kontrolliert und protokolliert erhoeht.\"");
+
+        // Dienst gegen Stoppen/Loeschen härten: nur SYSTEM darf alles; Administratoren
+        // duerfen lesen/starten, aber NICHT stoppen/konfigurieren/loeschen. So kann ein
+        // Kind auch waehrend der 15-Min-Admin-Zeit den Dienst nicht abschalten.
+        // SDDL: SY=SYSTEM Vollzugriff; BA=Administratoren eingeschraenkt (kein WD/WO/DC/stop).
+        Run("sc", $"sdset {ServiceName} " +
+            "\"D:(A;;CCLCSWRPWPDTLORC;;;SY)(A;;CCLCSWRPRC;;;BA)(A;;CCLCSWLORC;;;IU)(A;;CCLCSWLORC;;;SU)\"",
+            ignoreError: true);
+
+        Run("sc", $"failure {ServiceName} reset= 60 actions= restart/5000/restart/5000/restart/5000", ignoreError: true);
         Run("sc", $"start {ServiceName}");
-        Step("Dienst installiert und gestartet.");
+        Step("Dienst installiert, gehärtet (nicht durch Benutzer stoppbar) und gestartet.");
     }
 
     // --- Deinstallation ---
@@ -197,7 +207,11 @@ public sealed class Installer
         var installDir = Path.Combine(pf, "RunAsAdmin");
         var dataDir = Path.Combine(pd, "RunAsAdmin");
 
-        RunStatic("sc", "stop RunAsAdmin", true);
+        // Dienst ist gegen Stoppen durch Admins gehärtet -> Stop+Delete als SYSTEM.
+        RunAsSystem("sc.exe stop RunAsAdmin & timeout /t 3 /nobreak >nul & sc.exe delete RunAsAdmin", o);
+        Thread.Sleep(2000);
+
+        RunStatic("sc", "stop RunAsAdmin", true); // Fallback (falls schon entsperrt)
         // Prozesse (Dienst + GUI) erzwungen beenden und auf Ende warten.
         for (var i = 0; i < 30; i++)
         {
@@ -239,6 +253,26 @@ public sealed class Installer
 
     private static void TryDelete(string path) { try { if (File.Exists(path)) File.Delete(path); } catch { } }
 
+    /// <summary>
+    /// Führt ein cmd-Kommando als SYSTEM aus (über eine kurzlebige geplante Aufgabe).
+    /// Nötig, weil der Dienst gegen Stoppen durch Administratoren gehärtet ist.
+    /// </summary>
+    private static void RunAsSystem(string cmdLine, TextWriter o)
+    {
+        var task = "RunAsAdmin_SysOp";
+        var bat = Path.Combine(Path.GetTempPath(), $"raa_sysop_{Guid.NewGuid():N}.cmd");
+        try
+        {
+            File.WriteAllText(bat, "@echo off\r\n" + cmdLine + "\r\n");
+            RunStatic("schtasks", $"/Create /TN {task} /TR \"cmd /c \\\"{bat}\\\"\" /SC ONCE /ST 00:00 /RU SYSTEM /RL HIGHEST /F", true);
+            RunStatic("schtasks", $"/Run /TN {task}", true);
+            Thread.Sleep(4000);
+            RunStatic("schtasks", $"/Delete /TN {task} /F", true);
+        }
+        catch (Exception ex) { o.WriteLine($"  RunAsSystem: {ex.Message}"); }
+        finally { try { File.Delete(bat); } catch { } }
+    }
+
     private static void RunStatic(string file, string args, bool ignoreError)
     {
         try
@@ -253,8 +287,27 @@ public sealed class Installer
 
     // --- Helfer ---
 
+    private static bool ServiceExists()
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("sc.exe", "query RunAsAdmin")
+            { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+            using var p = Process.Start(psi)!;
+            p.WaitForExit(5000);
+            return p.ExitCode == 0;
+        }
+        catch { return false; }
+    }
+
     private void TryStopService()
     {
+        // Falls eine gehärtete Installation existiert: Stop als SYSTEM.
+        if (ServiceExists())
+        {
+            RunAsSystem("sc.exe stop RunAsAdmin", _out);
+            System.Threading.Thread.Sleep(1500);
+        }
         Run("sc", $"stop {ServiceName}", ignoreError: true);
 
         // GUI + Dienst-Prozess erzwungen beenden und auf echtes Ende warten –

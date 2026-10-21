@@ -23,9 +23,17 @@ Assert-Admin
 
 Write-Host "== RunAsAdmin wird bereinigt ==" -ForegroundColor Cyan
 
-# 1) Dienst stoppen
-Write-Host "Stoppe Dienst..."
-sc.exe stop $svc | Out-Null
+# 1) Dienst stoppen + loeschen ALS SYSTEM (Dienst ist gegen Admin-Stop gehaertet).
+Write-Host "Stoppe Dienst (als SYSTEM)..."
+$op = "$env:TEMP\raa_cleanup_sysop.cmd"
+Set-Content -Path $op -Value "@echo off`r`nsc.exe stop RunAsAdmin`r`ntimeout /t 3 /nobreak >nul`r`nsc.exe delete RunAsAdmin`r`n" -Encoding OEM
+schtasks /Create /TN RunAsAdmin_Cleanup /TR "cmd /c `"$op`"" /SC ONCE /ST 00:00 /RU SYSTEM /RL HIGHEST /F | Out-Null
+schtasks /Run /TN RunAsAdmin_Cleanup | Out-Null
+Start-Sleep -Seconds 5
+schtasks /Delete /TN RunAsAdmin_Cleanup /F 2>$null | Out-Null
+Remove-Item $op -Force -ErrorAction SilentlyContinue
+# Fallback (falls schon entsperrt):
+sc.exe stop $svc 2>$null | Out-Null
 
 # 2) Prozesse wasserdicht beenden (bis zu 20x)
 for ($i = 0; $i -lt 20; $i++) {
