@@ -157,6 +157,13 @@ public sealed class Elevator
     /// SYSTEM-Kontext statt im Kind-Kontext laufen (z. B. falsches/neues Profil,
     /// Login nicht persistent, Anti-Cheat verweigert SYSTEM).
     /// </summary>
+    /// <summary>
+    /// Stellt sicher, dass der aktuelle Thread NICHT (mehr) einen Client imitiert,
+    /// sondern als SYSTEM arbeitet. Nach einer Pipe-Impersonation (RunAsClient) sonst
+    /// scheitern Schreibzugriffe des Dienstes (z. B. auf die gehärtete config.json).
+    /// </summary>
+    public static void EnsureNotImpersonating() { try { RevertToSelf(); } catch { } }
+
     public LaunchResult LaunchElevatedAsService(string exePath, string? arguments, string? workingDir,
         Action<string> onStep)
     {
@@ -165,8 +172,11 @@ public sealed class Elevator
         RevertToSelf();
 
         // SeTcbPrivilege aktivieren – nötig, um die Session-ID eines Tokens zu setzen
-        // und in einer anderen Sitzung zu starten.
+        // und in einer anderen Sitzung zu starten. SeBackup/SeRestore werden zusätzlich
+        // für LoadUserProfile gebraucht (lädt den Registry-Hive des Kindes).
         EnablePrivilege(SE_TCB_NAME, onStep);
+        EnablePrivilege(SE_BACKUP_NAME, onStep);
+        EnablePrivilege(SE_RESTORE_NAME, onStep);
 
         // 1) Aktive Konsolensitzung = Sitzung des angemeldeten Kindes.
         var consoleSession = WTSGetActiveConsoleSessionId();

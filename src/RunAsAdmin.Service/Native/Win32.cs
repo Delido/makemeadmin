@@ -27,6 +27,9 @@ internal static partial class Win32
     internal const int SE_PRIVILEGE_ENABLED = 0x00000002;
     internal const string SE_TCB_NAME = "SeTcbPrivilege";
     internal const string SE_ASSIGNPRIMARYTOKEN_NAME = "SeAssignPrimaryTokenNameTokenPrivilege";
+    // Fuer LoadUserProfile benoetigt (Registry-Hive laden): Backup + Restore.
+    internal const string SE_BACKUP_NAME = "SeBackupPrivilege";
+    internal const string SE_RESTORE_NAME = "SeRestorePrivilege";
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct LUID { public uint LowPart; public int HighPart; }

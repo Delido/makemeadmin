@@ -308,6 +308,9 @@ public sealed class RequestHandler
                         : null,
                     Reason = req.Reason ?? "Von Papa dauerhaft erlaubt",
                 };
+                // Als SYSTEM schreiben (nicht als impersoniertes Kind) – sonst "Access
+                // denied" auf die gehärtete config.json.
+                Elevator.EnsureNotImpersonating();
                 _cfg.AddAllowedApp(permanent);
                 _log.Write("request.persisted", new { requestId, permanent.Name, permanent.Path });
 
@@ -749,6 +752,7 @@ public sealed class RequestHandler
 
         try
         {
+            Elevator.EnsureNotImpersonating();   // als SYSTEM speichern, nicht als Kind
             if (!string.IsNullOrEmpty(_cfg.SourcePath)) _cfg.Save(_cfg.SourcePath);
             _log.Write("settings.saved", new { requestingUser, mode = _cfg.Mode.ToString(), ha.BaseUrl, ha.Enabled, serverUrl = sv.BaseUrl });
 
