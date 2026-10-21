@@ -38,11 +38,16 @@ public partial class App : System.Windows.Application
         _tray.DoubleClick += (_, _) => ShowWindow();
 
         var menu = new WinForms.ContextMenuStrip();
-        menu.Items.Add("Programme starten…", null, (_, _) => ShowWindow());
+        var gamesMenu = new WinForms.ToolStripMenuItem("Spiele starten");
+        menu.Items.Add(gamesMenu);
+        menu.Items.Add("Fenster öffnen…", null, (_, _) => ShowWindow());
         menu.Items.Add("Einstellungen (Eltern)…", null, (_, _) => ShowSettings());
         menu.Items.Add(new WinForms.ToolStripSeparator());
         menu.Items.Add("Beenden", null, (_, _) => ExitApp());
         _tray.ContextMenuStrip = menu;
+
+        // Spiele-Untermenü beim Öffnen frisch mit den freigegebenen Spielen füllen.
+        menu.Opening += async (_, _) => await FillGamesMenuAsync(gamesMenu);
 
         // Admin-Status regelmäßig abfragen und Tray-Icon/Tooltip anpassen.
         StartStatusPolling();
@@ -54,6 +59,37 @@ public partial class App : System.Windows.Application
         // sonst Fenster direkt zeigen.
         if (!e.Args.Contains("/tray"))
             ShowWindow();
+    }
+
+    /// <summary>Füllt das Tray-Untermenü mit den dauerhaft freigegebenen Spielen.</summary>
+    private static async Task FillGamesMenuAsync(WinForms.ToolStripMenuItem gamesMenu)
+    {
+        gamesMenu.DropDownItems.Clear();
+        RunAsAdmin.Shared.AppListResponse list;
+        try { list = await RunAsAdmin.Shared.PipeClient.ListAppsAsync(); }
+        catch
+        {
+            gamesMenu.DropDownItems.Add(new WinForms.ToolStripMenuItem("Dienst nicht erreichbar") { Enabled = false });
+            return;
+        }
+
+        var games = list.Apps.Where(a => a.AutoApprove && !string.IsNullOrWhiteSpace(a.Path)).ToList();
+        if (games.Count == 0)
+        {
+            gamesMenu.DropDownItems.Add(new WinForms.ToolStripMenuItem("Noch keine Spiele freigegeben") { Enabled = false });
+            return;
+        }
+
+        foreach (var g in games)
+        {
+            var item = new WinForms.ToolStripMenuItem(g.Name) { Enabled = g.Available };
+            var path = g.Path;
+            item.Click += async (_, _) =>
+            {
+                try { await RunAsAdmin.Shared.PipeClient.LaunchGameAsync(path); } catch { }
+            };
+            gamesMenu.DropDownItems.Add(item);
+        }
     }
 
     private System.Windows.Threading.DispatcherTimer? _statusTimer;

@@ -18,6 +18,7 @@ public sealed class RequestHandler
     private readonly IApprover _approver;
     private readonly Elevator _elevator = new();
     private readonly TimeAdminManager _timeAdmin;
+    private readonly TaskLauncher _taskLauncher;
 
     /// <summary>Feste Dauer der Admin-Zeit (laut Vorgabe 15 Minuten).</summary>
     public const int TimeAdminMinutes = 15;
@@ -37,6 +38,7 @@ public sealed class RequestHandler
         _log = log;
         _approver = approver;
         _timeAdmin = timeAdmin;
+        _taskLauncher = new TaskLauncher(log);
     }
 
     /// <summary>Status einer laufenden Admin-Zeit.</summary>
@@ -307,6 +309,18 @@ public sealed class RequestHandler
                 };
                 _cfg.AddAllowedApp(permanent);
                 _log.Write("request.persisted", new { requestId, permanent.Name, permanent.Path });
+
+                // Dauerhaft freigegeben -> geplante Aufgabe anlegen, damit das Kind das
+                // Programm künftig selbst erhöht starten kann (Reiter „Spiele"/Tray).
+                var acct = GetActiveAccount();
+                if (acct is not null)
+                {
+                    var (tok, tmsg) = _taskLauncher.Register(permanent, acct);
+                    _log.Write("game.register_result", new { permanent.Name, ok = tok, msg = tmsg });
+                }
+                else _log.Write("game.register_skipped", new { permanent.Name, reason = "kein aktiver Benutzer" });
+
+                app = permanent;   // ab hier mit dem dauerhaften Eintrag weiterarbeiten
             }
             catch (Exception ex)
             {
@@ -328,6 +342,21 @@ public sealed class RequestHandler
         }
 
         _log.Write("launch.begin", new { requestId, app.Name, app.Path });
+
+        // Bevorzugt über die geplante Aufgabe starten (zuverlässig, Anti-Cheat-tauglich).
+        // Fällt das aus, greift der alte Token-Weg als Rückfall.
+        var (taskOk, taskMsg) = TryLaunchViaTask(app);
+        if (taskOk)
+        {
+            _log.Write("launch.success", new { requestId, app.Name, via = "task", decision });
+            return new ElevationResponse
+            {
+                State = RequestState.Approved, Decision = decision,
+                Message = $"{app.Name} wird gestartet.",
+            };
+        }
+        _log.Write("launch.task_fallback", new { requestId, app.Name, taskMsg });
+
         var launch = _elevator.LaunchElevated(app.Path, app.Arguments, null,
             step => _log.Write("launch.step", new { requestId, app.Name, step }));
 
@@ -341,12 +370,73 @@ public sealed class RequestHandler
             };
         }
 
-        _log.Write("launch.success", new { requestId, app.Name, launch.ProcessId, decision });
+        _log.Write("launch.success", new { requestId, app.Name, launch.ProcessId, via = "token", decision });
         return new ElevationResponse
         {
             State = RequestState.Approved, Decision = decision,
             Message = $"{app.Name} wurde gestartet.",
         };
+    }
+
+    /// <summary>
+    /// Startet eine App über ihre geplante Aufgabe. Fehlt die Aufgabe noch (z. B.
+    /// Bestands-Freigabe), wird sie vorher angelegt. Gibt (false, Grund) zurück,
+    /// wenn weder Anlegen noch Start klappen.
+    /// </summary>
+    private (bool Ok, string Message) TryLaunchViaTask(AllowedApp app)
+    {
+        var acct = GetActiveAccount();
+        if (acct is null) return (false, "kein aktiver Benutzer");
+
+        var (ok, msg) = _taskLauncher.Launch(app);
+        if (ok) return (true, msg);
+
+        // Aufgabe evtl. noch nicht vorhanden -> einmalig anlegen und erneut starten.
+        var (regOk, regMsg) = _taskLauncher.Register(app, acct);
+        if (!regOk) return (false, regMsg);
+        return _taskLauncher.Launch(app);
+    }
+
+    /// <summary>Kontoname (Domain\\User) der aktiven Sitzung für die Aufgabe, oder null.</summary>
+    private string? GetActiveAccount()
+    {
+        try
+        {
+            var u = Elevator.GetActiveSessionUser();
+            return u?.Account;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Startet ein bereits dauerhaft freigegebenes Spiel direkt (GUI-Reiter „Spiele"/Tray).
+    /// Prüft vorher die Datei (Hash/Herausgeber) gegen Austausch.
+    /// </summary>
+    public ElevationResponse LaunchGame(string path, string requestingUser)
+    {
+        var app = _cfg.AllowedApps.FirstOrDefault(a =>
+            string.Equals(a.Path, path, StringComparison.OrdinalIgnoreCase) && a.AutoApprove);
+        if (app is null)
+            return new ElevationResponse { State = RequestState.Denied, Decision = "Policy",
+                Message = "Dieses Programm ist nicht dauerhaft freigegeben." };
+
+        var verify = FileVerifier.Verify(app);
+        if (!verify.Ok)
+        {
+            _log.Write("game.verify_failed", new { app.Name, detail = verify.Detail });
+            return new ElevationResponse { State = RequestState.Denied, Decision = "IntegrityCheck",
+                Message = $"Sicherheitsprüfung fehlgeschlagen: {verify.Detail}" };
+        }
+
+        _log.Write("game.launch_requested", new { app.Name, requestingUser });
+        var (ok, msg) = TryLaunchViaTask(app);
+        if (ok)
+        {
+            _log.Write("launch.success", new { app.Name, via = "task", decision = "Game" });
+            return new ElevationResponse { State = RequestState.Approved, Decision = "Game", Message = msg };
+        }
+        return new ElevationResponse { State = RequestState.Error, Decision = "Game",
+            Message = $"Start fehlgeschlagen: {msg}" };
     }
 
     private string? _cachedCallbackHost;
@@ -585,6 +675,7 @@ public sealed class RequestHandler
             Apps = _cfg.AllowedApps.Select(a => new AppInfo
             {
                 Name = a.Name,
+                Path = a.Path,
                 AutoApprove = a.AutoApprove,
                 Reason = a.Reason,
                 Available = !string.IsNullOrWhiteSpace(a.Path) && File.Exists(a.Path),

@@ -130,6 +130,19 @@ public static class PipeClient
                ?? new TimeAdminResponse { State = RequestState.Error, Message = "Keine Antwort erhalten." };
     }
 
+    /// <summary>Startet ein dauerhaft freigegebenes Spiel erhöht (über geplante Aufgabe).</summary>
+    public static async Task<ElevationResponse> LaunchGameAsync(string path, CancellationToken ct = default)
+    {
+        var msg = new PipeMessage
+        {
+            Verb = PipeVerb.LaunchGame,
+            Request = new ElevationRequest { CustomPath = path },
+        };
+        var line = await SendAsync(msg, ct);
+        return (line is null ? null : AppConfig.Deserialize<ElevationResponse>(line))
+               ?? new ElevationResponse { State = RequestState.Error, Message = "Keine Antwort erhalten." };
+    }
+
     /// <summary>Fragt den Status einer laufenden Admin-Zeit ab.</summary>
     public static async Task<TimeAdminResponse> TimeStatusAsync(CancellationToken ct = default)
     {

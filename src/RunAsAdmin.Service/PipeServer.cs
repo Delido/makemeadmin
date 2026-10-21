@@ -110,6 +110,10 @@ public sealed class PipeServer
             {
                 responseObject = _handler.GrantTimeLocal(user, msg.Settings?.Pin, msg.Reason);
             }
+            else if (msg.Verb == PipeVerb.LaunchGame)
+            {
+                responseObject = _handler.LaunchGame(msg.Request?.CustomPath ?? "", user);
+            }
             else if (msg.Verb == PipeVerb.ApplyUpdate)
             {
                 // Sicherheit: der Dienst lädt + prüft das Update SELBST von GitHub.

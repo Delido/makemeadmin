@@ -98,6 +98,8 @@
                     <StackPanel x:Name="Nav" DockPanel.Dock="Top" Margin="0,8,0,0">
                         <RadioButton x:Name="NavStart" Style="{StaticResource NavBtn}" Tag="🏠" Content="Start"
                                      IsChecked="True" Checked="Nav_Checked"/>
+                        <RadioButton x:Name="NavGames" Style="{StaticResource NavBtn}" Tag="🎮" Content="Spiele"
+                                     Checked="Nav_Checked"/>
                         <RadioButton x:Name="NavHistory" Style="{StaticResource NavBtn}" Tag="📜" Content="Verlauf"
                                      Checked="Nav_Checked"/>
                         <RadioButton x:Name="NavStatus" Style="{StaticResource NavBtn}" Tag="📊" Content="Status"
@@ -184,6 +186,25 @@
                                        FontSize="24" FontWeight="Bold" Margin="0,0,0,12"/>
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
                                 <ItemsControl x:Name="HistoryList"/>
+                            </ScrollViewer>
+                        </DockPanel>
+                    </Grid>
+
+                    <!-- SPIELE -->
+                    <Grid x:Name="PageGames" Visibility="Collapsed">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="Spiele" Foreground="{StaticResource Text}"
+                                       FontSize="24" FontWeight="Bold" Margin="0,0,0,4"/>
+                            <TextBlock DockPanel.Dock="Top" Foreground="{StaticResource Muted}" FontSize="13"
+                                       TextWrapping="Wrap" Margin="0,0,0,14"
+                                       Text="Dauerhaft freigegebene Spiele. Starten mit Adminrechten – ohne Nachfrage. Neue Spiele per Rechtsklick auf die .exe: 'Mit Adminrechten anfragen' und 'Immer erlauben' freigeben."/>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel>
+                                    <ItemsControl x:Name="GamesList"/>
+                                    <TextBlock x:Name="GamesEmpty" Visibility="Collapsed"
+                                               Foreground="{StaticResource Muted}" FontSize="13.5" Margin="2,8,0,0"
+                                               Text="Noch keine Spiele dauerhaft freigegeben."/>
+                                </StackPanel>
                             </ScrollViewer>
                         </DockPanel>
                     </Grid>

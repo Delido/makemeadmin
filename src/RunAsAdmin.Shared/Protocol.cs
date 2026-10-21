@@ -30,6 +30,8 @@ public enum PipeVerb
     /// erreichbar ist. Papa gibt die PIN direkt am Kinder-PC ein.
     /// </summary>
     GrantTimeLocal = 11,
+    /// <summary>Ein dauerhaft freigegebenes Spiel erhöht starten (über geplante Aufgabe).</summary>
+    LaunchGame = 12,
 }
 
 /// <summary>Antwort auf AdminCheck / Demote.</summary>
@@ -127,6 +129,8 @@ public sealed class TimeAdminResponse
 public sealed class AppInfo
 {
     public string Name { get; set; } = "";
+    /// <summary>Pfad der .exe – dient der GUI als Kennung zum Starten (LaunchGame).</summary>
+    public string Path { get; set; } = "";
     public bool AutoApprove { get; set; }
     public string? Reason { get; set; }
     /// <summary>true, wenn die Datei am hinterlegten Pfad existiert.</summary>

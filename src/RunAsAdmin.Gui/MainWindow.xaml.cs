@@ -5,6 +5,7 @@ using RunAsAdmin.Shared;
 using Color = System.Windows.Media.Color;
 using SolidColorBrush = System.Windows.Media.SolidColorBrush;
 using Orientation = System.Windows.Controls.Orientation;
+using Button = System.Windows.Controls.Button;
 
 namespace RunAsAdmin.Gui;
 
@@ -28,10 +29,12 @@ public partial class MainWindow : Window
     {
         if (PageStart is null) return; // noch nicht geladen
         PageStart.Visibility = NavStart.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        PageGames.Visibility = NavGames.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageHistory.Visibility = NavHistory.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageStatus.Visibility = NavStatus.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
 
         if (NavStart.IsChecked == true) PageTitle.Text = "Start";
+        else if (NavGames.IsChecked == true) { PageTitle.Text = "Spiele"; _ = LoadGamesAsync(); }
         else if (NavHistory.IsChecked == true) { PageTitle.Text = "Verlauf"; _ = LoadHistoryAsync(); }
         else if (NavStatus.IsChecked == true) { PageTitle.Text = "Status"; _ = LoadStatusAsync(); }
         else if (NavSettings.IsChecked == true)
@@ -186,6 +189,89 @@ public partial class MainWindow : Window
 
     private static TextBlock MutedText(string t) => new()
     { Text = t, Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x93, 0xA1)), FontSize = 13 };
+
+    // ---------- Spiele-Seite ----------
+    private async Task LoadGamesAsync()
+    {
+        GamesList.Items.Clear();
+        AppListResponse list;
+        try { list = await PipeClient.ListAppsAsync(); }
+        catch { GamesEmpty.Visibility = Visibility.Visible; return; }
+
+        // Nur dauerhaft freigegebene Programme ("für immer erlaubt").
+        var games = list.Apps.Where(a => a.AutoApprove && !string.IsNullOrWhiteSpace(a.Path)).ToList();
+        GamesEmpty.Visibility = games.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var g in games)
+            GamesList.Items.Add(GameTile(g));
+    }
+
+    private UIElement GameTile(AppInfo g)
+    {
+        var grid = new Grid { Margin = new Thickness(0, 0, 0, 10) };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        info.Children.Add(new TextBlock
+        {
+            Text = g.Name,
+            Foreground = new SolidColorBrush(Color.FromRgb(0xE6, 0xE9, 0xEE)),
+            FontSize = 15, FontWeight = FontWeights.SemiBold,
+        });
+        info.Children.Add(new TextBlock
+        {
+            Text = g.Available ? "Dauerhaft freigegeben" : "Datei nicht gefunden",
+            Foreground = new SolidColorBrush(g.Available
+                ? Color.FromRgb(0x2F, 0xBF, 0x71) : Color.FromRgb(0xE0, 0x5A, 0x4A)),
+            FontSize = 12, Margin = new Thickness(0, 2, 0, 0),
+        });
+        Grid.SetColumn(info, 0);
+        grid.Children.Add(info);
+
+        var btn = new Button
+        {
+            Content = "▶  Spielen",
+            IsEnabled = g.Available,
+            Cursor = System.Windows.Input.Cursors.Hand,
+            Foreground = System.Windows.Media.Brushes.White,
+            Background = new SolidColorBrush(Color.FromRgb(0x2F, 0xBF, 0x71)),
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(18, 8, 18, 8),
+            FontWeight = FontWeights.SemiBold,
+            Tag = g.Path,
+        };
+        btn.Click += Game_Play;
+        Grid.SetColumn(btn, 1);
+        grid.Children.Add(btn);
+
+        return new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x20, 0x2A)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0x2A, 0x2D, 0x38)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(16, 12, 14, 12),
+            Margin = new Thickness(0, 0, 0, 10),
+            Child = grid,
+        };
+    }
+
+    private async void Game_Play(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button b || b.Tag is not string path || string.IsNullOrEmpty(path)) return;
+        ShowOverlay("🎮", "Spiel wird gestartet…", "", waiting: true);
+        try
+        {
+            var resp = await PipeClient.LaunchGameAsync(path);
+            var ok = resp.State == RequestState.Approved;
+            ShowOverlay(ok ? "✅" : "🚫", ok ? "Viel Spaß!" : "Start fehlgeschlagen",
+                resp.Message, waiting: false);
+        }
+        catch (Exception ex)
+        {
+            ShowOverlay("🚫", "Es hat nicht geklappt", ex.Message, waiting: false);
+        }
+    }
 
     // ---------- Status-Seite ----------
     private async Task LoadStatusAsync()
