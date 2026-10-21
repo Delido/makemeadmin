@@ -296,6 +296,15 @@ async def api_event(req: Request):
     elif etype == "games.registered":
         d = _parse_detail(detail)
         db.set_registered_games(computer, d.get("games") or [])
+    elif etype == "admin.suspicious_alert":
+        # Missbrauch waehrend der kurzen Adminrechte: sofort Push an Papa.
+        d = _parse_detail(detail)
+        proc = d.get("process") or "?"
+        await ha_notify(
+            title=f"RunAsAdmin: verdaechtige Aktion auf {computer}",
+            message=f"Waehrend der kurzen Adminrechte wurde '{proc}' erhoeht gestartet.",
+            tag=f"raa_suspicious_{computer}",
+        )
     return {"ok": True}
 
 

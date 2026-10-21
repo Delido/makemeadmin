@@ -20,6 +20,7 @@ public sealed class EventReporter : IDisposable
         "timeadmin.local_pin_wrong",   // Fehlversuch beim lokalen PIN-Fallback melden
         "game.launched", "games.registered",   // Spiele: Start + Liste der freigegebenen
         "admin.demoted", "admin.permanent_warning",
+        "admin.suspicious_alert",   // Missbrauch waehrend kurz-Admin -> Push an Papa
         // Diagnose: ob der Rückkanal-Listener startet und Entscheidungen ankommen.
         "service.ha_listener_failed", "decision.received",
     };

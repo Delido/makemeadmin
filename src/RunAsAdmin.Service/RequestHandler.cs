@@ -353,7 +353,7 @@ public sealed class RequestHandler
         // dann startet der CLIENT (GUI/Anfrage-Dialog) die App selbst in der sichtbaren
         // Sitzung. Der Dienst-interne Start (LaunchElevatedAsService) bleibt an der
         // Session-0-Isolation unsichtbar – deshalb NICHT mehr hier starten.
-        var (grantOk, grantMsg) = _timeAdmin.GrantForAppLaunch(AppAdminMinutes, app.Name);
+        var (grantOk, grantMsg) = _timeAdmin.GrantForAppLaunch(AppAdminMinutes, app.Name, app.Path);
         if (!grantOk)
         {
             _log.Write("launch.grant_failed", new { requestId, app.Name, grantMsg });
@@ -452,7 +452,7 @@ public sealed class RequestHandler
         // Session 0 unsichtbar bleiben) – stattdessen startet die GUI das Programm
         // selbst in ihrer sichtbaren Sitzung. Da das Kind jetzt Admin ist, läuft es
         // dort erhöht. Nach AppAdminMinutes automatischer Entzug (Timer).
-        var (grantOk, grantMsg) = _timeAdmin.GrantForAppLaunch(AppAdminMinutes, app.Name);
+        var (grantOk, grantMsg) = _timeAdmin.GrantForAppLaunch(AppAdminMinutes, app.Name, app.Path);
         if (!grantOk)
         {
             _log.Write("game.grant_failed", new { app.Name, grantMsg });

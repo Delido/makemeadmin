@@ -57,6 +57,15 @@ public sealed class Worker : BackgroundService
 
         using var timeAdmin = new TimeAdminManager(log);
         approver.OnCancel = () => timeAdmin.Revoke("notaus");   // Not-Aus per Handy
+
+        // Missbrauch waehrend der kurz-Admin-Zeit melden (nur melden, kein Auto-Entzug):
+        // Das Ereignis geht ueber den Audit-Sink an HA/Add-on -> Push an Papas Handy.
+        timeAdmin.OnSuspiciousActivity = (name, pid) =>
+            log.Write("admin.suspicious_alert", new
+            {
+                process = name, pid,
+                message = $"Achtung: waehrend der kurzen Adminrechte wurde '{name}' erhoeht gestartet.",
+            });
         var handler = new RequestHandler(cfg, log, approver, timeAdmin);
         var pipe = new PipeServer(cfg, log, handler);
 

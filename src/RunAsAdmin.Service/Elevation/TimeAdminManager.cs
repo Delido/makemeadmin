@@ -29,6 +29,34 @@ public sealed class TimeAdminManager : IDisposable
     private int _processCount;
     private readonly List<string> _elevatedNames = new();
 
+    // --- Fenster-Minimierung (Feature 1): sobald die freigegebene App laeuft, nach
+    //     kurzer Karenz die Rechte wieder entziehen, statt die vollen Minuten offen
+    //     zu lassen. _expectedAppExe = Dateiname der App, auf deren Start wir warten.
+    private string? _expectedAppExe;
+    private Timer? _earlyRevokeTimer;
+    private bool _earlyRevokeArmed;
+    private const int EarlyRevokeGraceSeconds = 15;
+
+    // --- Missbrauchs-Erkennung (Feature 2): verdaechtige erhoehte Prozesse, die das
+    //     Kind NICHT ueber eine freigegebene App startet, sondern mit den kurz
+    //     gewaehrten Adminrechten selbst (regedit, cmd, Rechte-/Konten-Tools ...).
+    private static readonly HashSet<string> SuspiciousExes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "regedit.exe", "cmd.exe", "powershell.exe", "pwsh.exe", "powershell_ise.exe",
+        "mmc.exe", "taskmgr.exe", "net.exe", "net1.exe", "netplwiz.exe",
+        "lusrmgr.msc", "secpol.msc", "gpedit.msc", "services.msc", "compmgmt.msc",
+        "control.exe", "wscript.exe", "cscript.exe", "reg.exe", "sc.exe",
+        "bcdedit.exe", "cmdkey.exe", "runas.exe", "psexec.exe", "psexec64.exe",
+    };
+
+    /// <summary>
+    /// Wird gefeuert, wenn waehrend einer kurz-Admin-Zeit ein VERDAECHTIGER erhoehter
+    /// Prozess erkannt wird (Kind nutzt die Rechte fuer etwas anderes als die App).
+    /// Nur MELDEN – der Entzug laeuft normal weiter (bewusste Entscheidung).
+    /// Argumente: (prozessName, pid).
+    /// </summary>
+    public Action<string, int>? OnSuspiciousActivity { get; set; }
+
     // Persistenter Zustand, damit eine Admin-Zeit einen Dienst-Neustart überlebt
     // bzw. nach einem Absturz sicher beendet werden kann (kein Dauer-Admin).
     private static readonly string StateFile =
@@ -169,9 +197,19 @@ public sealed class TimeAdminManager : IDisposable
     /// Rückgabe: Ok = Konto ist jetzt (kurz) Admin, Programm kann gestartet werden.
     /// </summary>
     public (bool Ok, string Message) GrantForAppLaunch(int minutes, string appName)
+        => GrantForAppLaunch(minutes, appName, null);
+
+    /// <param name="appExePath">
+    /// Pfad/Dateiname der App, auf deren erhöhten Start gewartet wird. Sobald dieser
+    /// Prozess läuft, werden die Rechte nach kurzer Karenz vorzeitig entzogen
+    /// (Fenster so kurz wie möglich). Null -> nur der feste Timer greift.
+    /// </param>
+    public (bool Ok, string Message) GrantForAppLaunch(int minutes, string appName, string? appExePath)
     {
         lock (_gate)
         {
+            var exe = string.IsNullOrWhiteSpace(appExePath) ? null : Path.GetFileName(appExePath);
+
             // Bereits Admin-Zeit aktiv? -> nur verlängern, kein neuer Grant.
             if (_activeSid is not null)
             {
@@ -182,6 +220,8 @@ public sealed class TimeAdminManager : IDisposable
                     _timer?.Change(TimeSpan.FromMinutes(minutes), Timeout.InfiniteTimeSpan);
                     WriteState();
                 }
+                // Neue App erwartet -> Früh-Entzug wieder scharf machen für diese App.
+                if (exe is not null) { _expectedAppExe = exe; _earlyRevokeArmed = false; }
                 _log.Write("applaunch.admin_extended", new { appName, minutes });
                 return (true, "Adminrechte (kurz) verlängert.");
             }
@@ -202,9 +242,11 @@ public sealed class TimeAdminManager : IDisposable
             _expiresAt = DateTimeOffset.Now.AddMinutes(minutes);
             _processCount = 0;
             _elevatedNames.Clear();
+            _expectedAppExe = exe;
+            _earlyRevokeArmed = false;
             WriteState();
 
-            _log.Write("applaunch.admin_granted", new { appName, minutes, user = user.Value.Full, detail });
+            _log.Write("applaunch.admin_granted", new { appName, minutes, user = user.Value.Full, detail, expectedExe = exe });
             StartProcessWatch(user.Value.Account);
             _timer = new Timer(_ => Revoke("applaunch_timeout"), null,
                 TimeSpan.FromMinutes(minutes), Timeout.InfiniteTimeSpan);
@@ -236,6 +278,8 @@ public sealed class TimeAdminManager : IDisposable
             });
 
             _timer?.Dispose(); _timer = null;
+            _earlyRevokeTimer?.Dispose(); _earlyRevokeTimer = null;
+            _earlyRevokeArmed = false; _expectedAppExe = null;
             _activeSid = null; _activeAccount = null;
             TryDeleteState();
         }
@@ -259,12 +303,38 @@ public sealed class TimeAdminManager : IDisposable
                     // das sind die interessanten. Normale Prozesse ignorieren.
                     if (!Native.ProcessInfo.IsElevated(pid)) return;
 
+                    bool isExpectedApp;
+                    bool isSuspicious = SuspiciousExes.Contains(name);
                     lock (_gate)
                     {
                         _processCount++;
                         if (!_elevatedNames.Contains(name)) _elevatedNames.Add(name);
+                        isExpectedApp = _expectedAppExe is not null &&
+                            string.Equals(name, _expectedAppExe, StringComparison.OrdinalIgnoreCase);
+
+                        // Feature 1: Die erwartete App läuft jetzt erhöht -> Fenster
+                        // schließen. Noch kurze Karenz, damit Anti-Cheat-Dienst/Launcher
+                        // -Kindprozesse sich einrichten können, dann sofort entziehen.
+                        if (isExpectedApp && !_earlyRevokeArmed)
+                        {
+                            _earlyRevokeArmed = true;
+                            _earlyRevokeTimer = new Timer(_ => Revoke("app_running_early"), null,
+                                TimeSpan.FromSeconds(EarlyRevokeGraceSeconds), Timeout.InfiniteTimeSpan);
+                            _log.Write("applaunch.app_detected", new
+                            {
+                                account, name, pid, revokeInSeconds = EarlyRevokeGraceSeconds,
+                            });
+                        }
                     }
-                    _log.Write("timeadmin.process", new { account, name, pid, elevated = true });
+                    _log.Write("timeadmin.process", new { account, name, pid, elevated = true, suspicious = isSuspicious });
+
+                    // Feature 2: verdächtiger erhöhter Prozess (nicht die freigegebene
+                    // App) -> nur MELDEN, Fenster läuft normal weiter.
+                    if (isSuspicious && !isExpectedApp)
+                    {
+                        _log.Write("admin.suspicious", new { account, name, pid });
+                        try { OnSuspiciousActivity?.Invoke(name, pid); } catch { }
+                    }
                 }
                 catch { /* nie werfen */ }
             };
