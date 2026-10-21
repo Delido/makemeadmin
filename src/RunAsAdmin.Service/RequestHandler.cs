@@ -345,8 +345,23 @@ public sealed class RequestHandler
 
         _log.Write("launch.begin", new { requestId, app.Name, app.Path });
 
-        // Bevorzugt über die geplante Aufgabe starten (zuverlässig, Anti-Cheat-tauglich).
-        // Fällt das aus, greift der alte Token-Weg als Rückfall.
+        // Weg A ZUERST: Der Dienst (SYSTEM) startet das Programm selbst ERHÖHT in der
+        // sichtbaren Sitzung. Nur so wird ein Standardbenutzer-Programm wirklich erhöht
+        // (ohne UAC). Der Task-Weg kann das NICHT und bringt sonst eine UAC-Abfrage.
+        var elevated = _elevator.LaunchElevatedAsService(app.Path, app.Arguments, null,
+            step => _log.Write("launch.step", new { requestId, app.Name, step, via = "service-elevated" }));
+        if (elevated.Ok)
+        {
+            _log.Write("launch.success", new { requestId, app.Name, elevated.ProcessId, via = "service-elevated", decision });
+            return new ElevationResponse
+            {
+                State = RequestState.Approved, Decision = decision,
+                Message = $"{app.Name} wird gestartet.",
+            };
+        }
+        _log.Write("launch.elevated_failed", new { requestId, app.Name, detail = elevated.Detail });
+
+        // Rückfall 1: geplante Aufgabe (nur falls das Konto doch Admin ist).
         var (taskOk, taskMsg) = TryLaunchViaTask(app);
         if (taskOk)
         {
@@ -359,6 +374,7 @@ public sealed class RequestHandler
         }
         _log.Write("launch.task_fallback", new { requestId, app.Name, taskMsg });
 
+        // Rückfall 2: alter Token-Weg (MakeMeAdmin).
         var launch = _elevator.LaunchElevated(app.Path, app.Arguments, null,
             step => _log.Write("launch.step", new { requestId, app.Name, step }));
 
@@ -368,7 +384,7 @@ public sealed class RequestHandler
             return new ElevationResponse
             {
                 State = RequestState.Error, Decision = decision,
-                Message = $"Start fehlgeschlagen: {launch.Detail}",
+                Message = $"Start fehlgeschlagen: {elevated.Detail}",
             };
         }
 
