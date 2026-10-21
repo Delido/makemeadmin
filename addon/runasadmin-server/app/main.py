@@ -109,7 +109,25 @@ async def api_event(req: Request):
         db.start_session(computer, data.get("User", "?"))
     elif etype == "timeadmin.revoked":
         db.end_session(computer, data.get("Apps", ""))
+    elif etype == "game.launched":
+        d = _parse_detail(detail)
+        db.add_game_launch(computer, d.get("user") or data.get("User", "?"),
+                           d.get("game") or "?")
+    elif etype == "games.registered":
+        d = _parse_detail(detail)
+        db.set_registered_games(computer, d.get("games") or [])
     return {"ok": True}
+
+
+def _parse_detail(detail):
+    """Detail ist ein JSON-String (vom PC-Dienst). Robust zu dict parsen."""
+    if isinstance(detail, dict):
+        return detail
+    try:
+        v = _json.loads(detail) if detail else {}
+        return v if isinstance(v, dict) else {}
+    except Exception:
+        return {}
 
 
 # ---------------- Web-Dashboard (HA-Ingress) ----------------
@@ -122,6 +140,8 @@ async def dashboard(request: Request):
         events=db.recent_events(60),
         per_day=db.sessions_per_day(),
         top_apps=db.top_apps(),
+        top_games=db.top_games(),
+        reg_games=db.registered_games(),
     )
 
 

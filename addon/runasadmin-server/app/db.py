@@ -40,6 +40,18 @@ CREATE TABLE IF NOT EXISTS cancels (
     computer TEXT PRIMARY KEY,   -- offener Not-Aus; vom PC beim Pollen abgeholt
     requested INTEGER
 );
+CREATE TABLE IF NOT EXISTS game_launches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    computer TEXT,
+    user TEXT,
+    game TEXT,
+    ts INTEGER
+);
+CREATE TABLE IF NOT EXISTS registered_games (
+    computer TEXT,               -- pro PC die aktuell freigegebenen Spiele
+    game TEXT,
+    PRIMARY KEY (computer, game)
+);
 """
 
 
@@ -160,6 +172,49 @@ def active_sessions():
             "SELECT * FROM sessions WHERE ended IS NULL ORDER BY started DESC"
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def add_game_launch(computer, user, game):
+    with conn() as c:
+        c.execute(
+            "INSERT INTO game_launches(computer,user,game,ts) VALUES(?,?,?,?)",
+            (computer, user, game, int(time.time())),
+        )
+
+
+def set_registered_games(computer, games):
+    """Ersetzt die Liste der freigegebenen Spiele eines PCs komplett."""
+    with conn() as c:
+        c.execute("DELETE FROM registered_games WHERE computer=?", (computer,))
+        for g in games:
+            g = (g or "").strip()
+            if g:
+                c.execute(
+                    "INSERT OR IGNORE INTO registered_games(computer,game) VALUES(?,?)",
+                    (computer, g),
+                )
+
+
+def registered_games():
+    """Freigegebene Spiele gruppiert nach PC."""
+    with conn() as c:
+        rows = c.execute(
+            "SELECT computer, game FROM registered_games ORDER BY computer, game"
+        ).fetchall()
+    out = {}
+    for r in rows:
+        out.setdefault(r["computer"], []).append(r["game"])
+    return out
+
+
+def top_games(days=30, limit=10):
+    with conn() as c:
+        rows = c.execute(
+            "SELECT game, COUNT(*) AS n FROM game_launches "
+            "WHERE ts > ? GROUP BY game ORDER BY n DESC LIMIT ?",
+            (int(time.time()) - days * 86400, limit),
+        ).fetchall()
+        return [(r["game"], r["n"]) for r in rows]
 
 
 def recent_events(limit=100):

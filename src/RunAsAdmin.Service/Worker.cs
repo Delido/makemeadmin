@@ -55,6 +55,9 @@ public sealed class Worker : BackgroundService
         var handler = new RequestHandler(cfg, log, approver, timeAdmin);
         var pipe = new PipeServer(cfg, log, handler);
 
+        // Dem Server/HA die aktuell freigegebenen Spiele melden (Dashboard-Übersicht).
+        handler.ReportRegisteredGames();
+
         // Tray-GUI in der Benutzersitzung sicherstellen (z. B. nach Update-Neustart).
         TryEnsureTrayGui(log);
 

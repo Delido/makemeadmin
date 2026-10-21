@@ -320,6 +320,7 @@ public sealed class RequestHandler
                 }
                 else _log.Write("game.register_skipped", new { permanent.Name, reason = "kein aktiver Benutzer" });
 
+                ReportRegisteredGames();   // Add-on-Übersicht aktualisieren
                 app = permanent;   // ab hier mit dem dauerhaften Eintrag weiterarbeiten
             }
             catch (Exception ex)
@@ -432,11 +433,30 @@ public sealed class RequestHandler
         var (ok, msg) = TryLaunchViaTask(app);
         if (ok)
         {
+            // Dediziertes Event mit sauberem Spielnamen -> Add-on-Statistik.
+            _log.Write("game.launched", new { game = app.Name, user = requestingUser });
             _log.Write("launch.success", new { app.Name, via = "task", decision = "Game" });
             return new ElevationResponse { State = RequestState.Approved, Decision = "Game", Message = msg };
         }
         return new ElevationResponse { State = RequestState.Error, Decision = "Game",
             Message = $"Start fehlgeschlagen: {msg}" };
+    }
+
+    /// <summary>
+    /// Meldet die aktuell dauerhaft freigegebenen Spiele nach außen (Add-on-Übersicht
+    /// „welche Spiele sind auf diesem PC freigegeben"). Feuern-und-vergessen.
+    /// </summary>
+    public void ReportRegisteredGames()
+    {
+        try
+        {
+            var games = _cfg.AllowedApps
+                .Where(a => a.AutoApprove && !string.IsNullOrWhiteSpace(a.Path))
+                .Select(a => a.Name)
+                .ToList();
+            _log.Write("games.registered", new { count = games.Count, games });
+        }
+        catch { }
     }
 
     private string? _cachedCallbackHost;

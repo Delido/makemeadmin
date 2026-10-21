@@ -87,6 +87,30 @@
     </div>
   </div>
 
+  <div class="grid">
+    <div class="card">
+      <h2>Meistgespielte Spiele</h2>
+      {% if top_games %}
+        <canvas id="topGames"></canvas>
+      {% else %}
+        <div class="muted">Noch keine Spielstarts.</div>
+      {% endif %}
+    </div>
+    <div class="card">
+      <h2>Freigegebene Spiele je PC</h2>
+      {% if reg_games %}
+        {% for computer, games in reg_games.items() %}
+        <div class="ev">
+          <span class="t">{{ computer }}</span>
+          <span>{{ games | join(', ') }}</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="muted">Noch keine Spiele dauerhaft freigegeben.</div>
+      {% endif %}
+    </div>
+  </div>
+
   <div class="card">
     <h2>Verlauf</h2>
     {% if events %}
@@ -114,6 +138,13 @@
     new Chart(document.getElementById('topApps'), {
       type:'bar', data:{ labels: topApps.map(a=>a[0]),
              datasets:[{ data: topApps.map(a=>a[1]), backgroundColor:'#2A5BD7', borderRadius:6 }] },
+      options:{ indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:axis,y:axis} }
+    });
+    const topGames = {{ top_games | tojson }};
+    const elGames = document.getElementById('topGames');
+    if (elGames) new Chart(elGames, {
+      type:'bar', data:{ labels: topGames.map(a=>a[0]),
+             datasets:[{ data: topGames.map(a=>a[1]), backgroundColor:'#9B5DE5', borderRadius:6 }] },
       options:{ indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:axis,y:axis} }
     });
   </script>
