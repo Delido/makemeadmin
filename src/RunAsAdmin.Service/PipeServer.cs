@@ -28,6 +28,18 @@ public sealed class PipeServer
 
     public async Task RunAsync(CancellationToken ct)
     {
+        // Mehrere Listener parallel laufen lassen, damit immer eine Pipe-Instanz
+        // auf Verbindungen wartet – sonst kann ein Client (z. B. während der
+        // Status-Abfragen) genau in die Luecke zwischen zwei Accepts fallen und
+        // mit "operation timed out" scheitern.
+        const int listeners = 4;
+        var tasks = new Task[listeners];
+        for (var i = 0; i < listeners; i++) tasks[i] = AcceptLoop(ct);
+        await Task.WhenAll(tasks);
+    }
+
+    private async Task AcceptLoop(CancellationToken ct)
+    {
         while (!ct.IsCancellationRequested)
         {
             NamedPipeServerStream? server = null;
@@ -35,8 +47,8 @@ public sealed class PipeServer
             {
                 server = CreatePipe();
                 await server.WaitForConnectionAsync(ct);
-                // Eigentum geht an den Handler über; dort wird die Pipe disposed.
-                // Deshalb hier KEIN using – sonst wird die Verbindung sofort geschlossen.
+                // Verbindung bearbeiten; diese Schleife erstellt sofort die nächste
+                // wartende Pipe-Instanz. Kein using – der Handler disposed die Pipe.
                 _ = HandleConnectionAsync(server, ct);
             }
             catch (OperationCanceledException) { server?.Dispose(); break; }

@@ -18,7 +18,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _statusTimer.Tick += async (_, _) => await RefreshStatusAsync();
         Loaded += async (_, _) => { _statusTimer.Start(); await RefreshStatusAsync(); };
         Closed += (_, _) => _statusTimer.Stop();
@@ -137,14 +137,21 @@ public partial class MainWindow : Window
             StatusDetail.Text = "Bitte einen Erwachsenen fragen.";
         }
 
-        // Warnen, wenn das Konto dauerhaft Admin ist (Tool sonst wirkungslos).
-        try
+        // Warnen, wenn das Konto dauerhaft Admin ist (ändert sich selten) – daher nur
+        // alle ~30 s prüfen, nicht bei jedem Status-Tick. Entlastet die Pipe deutlich.
+        if (DateTime.UtcNow - _lastAdminCheck > TimeSpan.FromSeconds(30))
         {
-            var chk = await PipeClient.AdminCheckAsync();
-            AdminWarn.Visibility = chk.IsPermanentAdmin ? Visibility.Visible : Visibility.Collapsed;
+            _lastAdminCheck = DateTime.UtcNow;
+            try
+            {
+                var chk = await PipeClient.AdminCheckAsync();
+                AdminWarn.Visibility = chk.IsPermanentAdmin ? Visibility.Visible : Visibility.Collapsed;
+            }
+            catch { }
         }
-        catch { }
     }
+
+    private DateTime _lastAdminCheck = DateTime.MinValue;
 
     private async void Demote_Click(object sender, RoutedEventArgs e)
     {
