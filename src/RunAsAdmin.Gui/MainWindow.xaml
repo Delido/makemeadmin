@@ -154,6 +154,13 @@
                             <Button x:Name="RequestBtn" Style="{StaticResource PrimaryBtn}" Margin="0,18,0,0"
                                     Content="Adminrechte anfragen (15 Min)" Click="Request_Click"/>
 
+                            <!-- Fallback: lokal per Eltern-PIN, falls HA/Server nicht erreichbar ist -->
+                            <Button x:Name="LocalPinBtn" Click="LocalPin_Click" Cursor="Hand"
+                                    Margin="0,10,0,0" HorizontalAlignment="Center"
+                                    Background="Transparent" BorderThickness="0"
+                                    Foreground="#8A909B" FontSize="12.5"
+                                    Content="Papa ist da? Mit Eltern-PIN freischalten"/>
+
                             <!-- Warnung: Konto ist dauerhaft Admin -> Tool wirkungslos -->
                             <Border x:Name="AdminWarn" Visibility="Collapsed" Margin="0,16,0,0"
                                     Background="#2A1416" CornerRadius="12" BorderBrush="#E05A4A" BorderThickness="1" Padding="16">

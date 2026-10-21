@@ -17,6 +17,7 @@ public sealed class EventReporter : IDisposable
     {
         "launch.success", "request.denied", "request.persisted",
         "timeadmin.granted", "timeadmin.revoked",
+        "timeadmin.local_pin_wrong",   // Fehlversuch beim lokalen PIN-Fallback melden
         "admin.demoted", "admin.permanent_warning",
         // Diagnose: ob der Rückkanal-Listener startet und Entscheidungen ankommen.
         "service.ha_listener_failed", "decision.received",

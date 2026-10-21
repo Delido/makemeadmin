@@ -71,8 +71,30 @@ public partial class MainWindow : Window
         "Timeout" => "Keine Antwort",
         "AlreadyActive" => "Schon aktiv",
         "Policy" => "Nicht eingerichtet",
+        "PinWrong" => "Falsche PIN",
         _ => "Nicht erlaubt",
     };
+
+    // ---------- Fallback: lokal per Eltern-PIN (wenn HA/Server nicht geht) ----------
+    private async void LocalPin_Click(object sender, RoutedEventArgs e)
+    {
+        var pin = PinPrompt.Ask(this, "Eltern-PIN eingeben, um 15 Minuten Admin zu geben:");
+        if (string.IsNullOrEmpty(pin)) return;
+        ShowOverlay("⏳", "Prüfe PIN…", "", waiting: true);
+        try
+        {
+            var resp = await PipeClient.GrantTimeLocalAsync(pin);
+            var ok = resp.State == RequestState.Approved;
+            ShowOverlay(ok ? "✅" : "🚫",
+                ok ? "Du bist jetzt 15 Minuten Admin!" : TitleFor(resp),
+                resp.Message, waiting: false);
+            await RefreshStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowOverlay("🚫", "Es hat nicht geklappt", ex.Message, waiting: false);
+        }
+    }
 
     // ---------- Status (Start-Seite + Tray) ----------
     private async Task RefreshStatusAsync()

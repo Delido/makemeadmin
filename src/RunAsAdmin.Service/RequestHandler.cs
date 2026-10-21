@@ -103,6 +103,50 @@ public sealed class RequestHandler
         }
     }
 
+    /// <summary>
+    /// Fallback ohne HA/Server: Papa gibt am Kinder-PC die Eltern-PIN ein und
+    /// gewährt damit direkt 15 Minuten Admin-Zeit. Funktioniert auch offline.
+    /// </summary>
+    public TimeAdminResponse GrantTimeLocal(string requestingUser, string? pin, string? reason)
+    {
+        if (string.IsNullOrEmpty(_cfg.ParentPinHash))
+            return new TimeAdminResponse
+            {
+                State = RequestState.Denied, Decision = "Policy",
+                Message = "Es ist noch keine Eltern-PIN eingerichtet. Bitte zuerst in den Einstellungen setzen.",
+            };
+
+        if (string.IsNullOrEmpty(pin) || !Secret.VerifyPin(pin, _cfg.ParentPinHash))
+        {
+            _log.Write("timeadmin.local_pin_wrong", new { requestingUser });
+            return new TimeAdminResponse
+            {
+                State = RequestState.Denied, Decision = "PinWrong",
+                Message = "Falsche PIN.",
+            };
+        }
+
+        if (_timeAdmin.IsActive)
+            return new TimeAdminResponse
+            {
+                State = RequestState.Denied, Decision = "AlreadyActive",
+                Active = true, RemainingSeconds = _timeAdmin.RemainingSeconds,
+                Message = $"Es läuft schon eine Admin-Zeit (noch {_timeAdmin.RemainingSeconds / 60} Min).",
+            };
+
+        var requestId = Guid.NewGuid().ToString("N");
+        _log.Write("timeadmin.requested", new { requestId, requestingUser, minutes = TimeAdminMinutes, reason, via = "local_pin" });
+
+        var (ok, msg) = _timeAdmin.Grant(TimeAdminMinutes, requestId, reason ?? "Lokal per Eltern-PIN");
+        return new TimeAdminResponse
+        {
+            State = ok ? RequestState.Approved : RequestState.Error,
+            Decision = "LocalPin",
+            Active = ok, RemainingSeconds = ok ? _timeAdmin.RemainingSeconds : 0,
+            Message = msg,
+        };
+    }
+
     private async Task<TimeAdminResponse> GrantTimeInnerAsync(string requestId, string requestingUser,
         string? reason, CancellationToken ct)
     {

@@ -113,6 +113,23 @@ public static class PipeClient
                ?? new TimeAdminResponse { State = RequestState.Error, Message = "Keine Antwort erhalten." };
     }
 
+    /// <summary>
+    /// Fallback: Admin-Zeit lokal per Eltern-PIN gewähren (ohne HA/Server).
+    /// </summary>
+    public static async Task<TimeAdminResponse> GrantTimeLocalAsync(string pin, string? reason = null,
+        CancellationToken ct = default)
+    {
+        var msg = new PipeMessage
+        {
+            Verb = PipeVerb.GrantTimeLocal,
+            Reason = reason,
+            Settings = new SettingsPayload { Pin = pin },
+        };
+        var line = await SendAsync(msg, ct);
+        return (line is null ? null : AppConfig.Deserialize<TimeAdminResponse>(line))
+               ?? new TimeAdminResponse { State = RequestState.Error, Message = "Keine Antwort erhalten." };
+    }
+
     /// <summary>Fragt den Status einer laufenden Admin-Zeit ab.</summary>
     public static async Task<TimeAdminResponse> TimeStatusAsync(CancellationToken ct = default)
     {

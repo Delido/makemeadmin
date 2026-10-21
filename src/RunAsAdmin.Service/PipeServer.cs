@@ -106,6 +106,10 @@ public sealed class PipeServer
             {
                 responseObject = await _handler.GrantTimeAsync(user, msg.Reason, ct);
             }
+            else if (msg.Verb == PipeVerb.GrantTimeLocal)
+            {
+                responseObject = _handler.GrantTimeLocal(user, msg.Settings?.Pin, msg.Reason);
+            }
             else if (msg.Verb == PipeVerb.ApplyUpdate)
             {
                 // Sicherheit: der Dienst lädt + prüft das Update SELBST von GitHub.

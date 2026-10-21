@@ -25,6 +25,11 @@ public enum PipeVerb
     AdminCheck = 9,
     /// <summary>Kind-Konto auf Standardbenutzer herunterstufen (nur mit PIN).</summary>
     Demote = 10,
+    /// <summary>
+    /// Admin-Zeit lokal per Eltern-PIN gewähren – Fallback, wenn HA/Server nicht
+    /// erreichbar ist. Papa gibt die PIN direkt am Kinder-PC ein.
+    /// </summary>
+    GrantTimeLocal = 11,
 }
 
 /// <summary>Antwort auf AdminCheck / Demote.</summary>
