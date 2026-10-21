@@ -221,21 +221,43 @@ public sealed class Installer
     private void RegisterService()
     {
         TryStopService();
-        Run("sc", $"delete {ServiceName}", ignoreError: true);
-        System.Threading.Thread.Sleep(800);
-        Run("sc", $"create {ServiceName} binPath= \"{ServiceExe}\" start= auto DisplayName= \"RunAsAdmin (kontrollierte Rechteerhoehung)\"");
-        Run("sc", $"description {ServiceName} \"Startet freigegebene Programme fuer Standardbenutzer kontrolliert und protokolliert erhoeht.\"");
 
-        // Dienst gegen Stoppen/Loeschen härten: nur SYSTEM darf alles; Administratoren
-        // duerfen lesen/starten, aber NICHT stoppen/konfigurieren/loeschen. So kann ein
-        // Kind auch waehrend der 15-Min-Admin-Zeit den Dienst nicht abschalten.
-        // SDDL: SY=SYSTEM Vollzugriff; BA=Administratoren eingeschraenkt (kein WD/WO/DC/stop).
+        // WICHTIG: Bei einem Update existiert der Dienst noch. Ein "sc delete" markiert
+        // ihn nur "zum Loeschen" (pending), solange noch Handles offen sind – ein
+        // direkt folgendes "sc create" scheitert dann mit Exit 1073 ("Dienst existiert
+        // bereits"), und es laeuft die ALTE Version weiter (bis zum Reboot).
+        // Deshalb: existiert der Dienst -> NUR die binPath aktualisieren (sc config),
+        // nicht loeschen+neu. Nur wenn er fehlt, neu anlegen.
+        if (ServiceExists())
+        {
+            // Zuerst die zu strenge Haertung aufheben, sonst darf selbst der Admin-
+            // Installer den Dienst nicht mehr konfigurieren (das war die Ursache fuer 1073).
+            Run("sc", $"sdset {ServiceName} \"D:(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLORC;;;IU)(A;;CCLCSWLORC;;;SU)\"", ignoreError: true);
+            Run("sc", $"config {ServiceName} binPath= \"{ServiceExe}\" start= auto", ignoreError: true);
+            Step("Bestehenden Dienst aktualisiert (ohne Neuanlage).");
+        }
+        else
+        {
+            var createResult = RunGetExit("sc", $"create {ServiceName} binPath= \"{ServiceExe}\" start= auto DisplayName= \"RunAsAdmin (kontrollierte Rechteerhoehung)\"");
+            if (createResult == 1073)
+            {
+                // Falls doch noch vorhanden: warten bis der pending-delete durch ist, dann config.
+                for (var i = 0; i < 20 && ServiceExists(); i++) System.Threading.Thread.Sleep(500);
+                Run("sc", $"config {ServiceName} binPath= \"{ServiceExe}\" start= auto", ignoreError: true);
+            }
+        }
+        Run("sc", $"description {ServiceName} \"Startet freigegebene Programme fuer Standardbenutzer kontrolliert und protokolliert erhoeht.\"", ignoreError: true);
+
+        // Härtung: Kinder (Standardbenutzer) duerfen den Dienst nicht stoppen/aendern.
+        // ABER SYSTEM UND Administratoren behalten Vollzugriff – sonst kann weder der
+        // Dienst sich selbst updaten noch ein kuenftiges Setup ihn verwalten (1073!).
+        // Das Kind ist kein Admin, also bleibt der Schutz vor den Kindern erhalten.
         Run("sc", $"sdset {ServiceName} " +
-            "\"D:(A;;CCLCSWRPWPDTLORC;;;SY)(A;;CCLCSWRPRC;;;BA)(A;;CCLCSWLORC;;;IU)(A;;CCLCSWLORC;;;SU)\"",
+            "\"D:(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLORC;;;IU)(A;;CCLCSWLORC;;;SU)\"",
             ignoreError: true);
 
         Run("sc", $"failure {ServiceName} reset= 60 actions= restart/5000/restart/5000/restart/5000", ignoreError: true);
-        Run("sc", $"start {ServiceName}");
+        Run("sc", $"start {ServiceName}", ignoreError: true);
 
         // Warten, bis der Dienst wirklich RUNNING ist. Sonst kann eine sofort
         // geöffnete GUI auf einen noch startenden Dienst treffen -> Pipe-Timeout
@@ -448,5 +470,22 @@ public sealed class Installer
             var err = p.StandardError.ReadToEnd().Trim();
             throw new Exception($"{file} {args} -> Exit {p.ExitCode} {err}");
         }
+    }
+
+    /// <summary>Führt ein Kommando aus und gibt den Exit-Code zurück (ohne Exception).</summary>
+    private int RunGetExit(string file, string args)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(file, args)
+            {
+                CreateNoWindow = true, UseShellExecute = false,
+                RedirectStandardOutput = true, RedirectStandardError = true,
+            };
+            using var p = Process.Start(psi)!;
+            p.WaitForExit();
+            return p.ExitCode;
+        }
+        catch { return -1; }
     }
 }
