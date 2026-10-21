@@ -226,6 +226,116 @@ internal static partial class Win32
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool UnloadUserProfile(IntPtr hToken, IntPtr hProfile);
 
+    // --- Window-Station & Desktop DACL (für sichtbare Fenster des Kind-Prozesses) ---
+    // Damit CreateProcessAsUser ein SICHTBARES Fenster erzeugen darf, muss das Token
+    // des neuen Prozesses Zugriff auf die interaktive Window-Station winsta0 UND den
+    // Desktop default haben (insb. DESKTOP_CREATEWINDOW). Dafür fügen wir deren DACL
+    // Access-Allowed-ACEs hinzu.
+
+    // Zugriffsrechte zum Öffnen der Window-Station / des Desktops (DACL ändern).
+    internal const uint READ_CONTROL = 0x00020000;
+    internal const uint WRITE_DAC = 0x00040000;
+
+    // Window-Station: Vollzugriff (WINSTA_ALL_ACCESS) für die ACE.
+    internal const uint WINSTA_ALL_ACCESS = 0x0000037F;
+
+    // Desktop: Vollzugriff (DESKTOP_ALL_ACCESS) inkl. DESKTOP_CREATEWINDOW (0x0002).
+    internal const uint DESKTOP_CREATEWINDOW = 0x0002;
+    internal const uint DESKTOP_WRITEOBJECTS = 0x0080;
+    internal const uint DESKTOP_ALL_ACCESS = 0x000201FF;
+
+    // ACE-Vererbungsflags (für die Window-Station, damit Desktops erben).
+    internal const byte CONTAINER_INHERIT_ACE = 0x02;
+    internal const byte INHERIT_ONLY_ACE = 0x08;
+    internal const byte OBJECT_INHERIT_ACE = 0x01;
+    internal const byte NO_PROPAGATE_INHERIT_ACE = 0x04;
+
+    // GetSecurityInfo/SetSecurityInfo: Objekttyp und betroffene Info.
+    internal const int SE_WINDOW_OBJECT = 7;              // SE_OBJECT_TYPE
+    internal const uint DACL_SECURITY_INFORMATION = 0x00000004;
+
+    // ACL-Revision / ACE-Typ.
+    internal const uint ACL_REVISION = 2;
+    internal const int ACCESS_ALLOWED_ACE_TYPE = 0x0;
+
+    // ACL-Information-Klasse.
+    internal const int AclSizeInformation = 2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct ACL_SIZE_INFORMATION
+    {
+        public uint AceCount;
+        public uint AclBytesInUse;
+        public uint AclBytesFree;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct ACE_HEADER
+    {
+        public byte AceType;
+        public byte AceFlags;
+        public ushort AceSize;
+    }
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    internal static extern IntPtr OpenWindowStation(string lpszWinSta,
+        [MarshalAs(UnmanagedType.Bool)] bool fInherit, uint dwDesiredAccess);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    internal static extern IntPtr OpenDesktop(string lpszDesktop, uint dwFlags,
+        [MarshalAs(UnmanagedType.Bool)] bool fInherit, uint dwDesiredAccess);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool CloseWindowStation(IntPtr hWinSta);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool CloseDesktop(IntPtr hDesktop);
+
+    // Sicherheitsinformationen eines Kernel-Objekts holen/setzen (advapi32).
+    // GetSecurityInfo liefert die DACL als Zeiger in den SD (nicht freizugeben außer SD).
+    [DllImport("advapi32.dll")]
+    internal static extern uint GetSecurityInfo(IntPtr handle, int ObjectType,
+        uint SecurityInfo, IntPtr ppsidOwner, IntPtr ppsidGroup,
+        out IntPtr ppDacl, IntPtr ppSacl, out IntPtr ppSecurityDescriptor);
+
+    [DllImport("advapi32.dll")]
+    internal static extern uint SetSecurityInfo(IntPtr handle, int ObjectType,
+        uint SecurityInfo, IntPtr psidOwner, IntPtr psidGroup,
+        IntPtr pDacl, IntPtr pSacl);
+
+    [DllImport("kernel32.dll")]
+    internal static extern IntPtr LocalFree(IntPtr hMem);
+
+    // --- ACL-Aufbau (neue DACL mit zusätzlicher ACE zusammensetzen) ---
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool InitializeAcl(IntPtr pAcl, uint nAclLength, uint dwAclRevision);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool GetAclInformation(IntPtr pAcl, ref ACL_SIZE_INFORMATION pAclInformation,
+        uint nAclInformationLength, int dwAclInformationClass);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool GetAce(IntPtr pAcl, uint dwAceIndex, out IntPtr pAce);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool AddAce(IntPtr pAcl, uint dwAceRevision, uint dwStartingAceIndex,
+        IntPtr pAceList, uint nAceListLength);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool AddAccessAllowedAceEx(IntPtr pAcl, uint dwAceRevision,
+        uint AceFlags, uint AccessMask, byte[] pSid);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool IsValidAcl(IntPtr pAcl);
+
     internal enum SID_NAME_USE { User = 1, Group, Domain, Alias, WellKnownGroup, DeletedAccount, Invalid, Unknown, Computer, Label }
 
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]

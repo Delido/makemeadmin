@@ -268,6 +268,36 @@ public sealed class Elevator
                 onStep($"Warnung: Kein Kind-Token für Profil (WTSQueryUserToken: {Marshal.GetLastPInvokeError()}). Starte trotzdem.");
             }
 
+            // 5b) DACL der interaktiven Window-Station winsta0 und des Desktops default
+            //     so erweitern, dass der neue Prozess ein Fenster erstellen darf
+            //     (DESKTOP_CREATEWINDOW). Sonst startet er UNSICHTBAR. Da der Prozess
+            //     im SYSTEM-Kontext läuft, ist SYSTEM (S-1-5-18) der entscheidende
+            //     Zugriffsinhaber; zusätzlich geben wir dem Kind-Konto und – als
+            //     robustem Fallback – Everyone (S-1-1-0) Zugriff. Best-effort.
+            try
+            {
+                var systemSid = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+                GrantWindowStationAndDesktopAccess(systemSid, onStep);
+
+                if (childToken != IntPtr.Zero)
+                {
+                    try
+                    {
+                        var childSid = ResolveUser(childToken).Sid;
+                        if (childSid != systemSid)
+                            GrantWindowStationAndDesktopAccess(childSid, onStep);
+                    }
+                    catch (Exception ex) { onStep($"Warnung: Kind-SID-Zugriff übersprungen: {ex.Message}"); }
+                }
+
+                var everyoneSid = new SecurityIdentifier(WellKnownSidType.WorldSid, null);
+                GrantWindowStationAndDesktopAccess(everyoneSid, onStep);
+            }
+            catch (Exception ex)
+            {
+                onStep($"Warnung: Window-Station/Desktop-Zugriff fehlgeschlagen: {ex.Message} (starte trotzdem).");
+            }
+
             try
             {
                 // 6) Prozess mit dem erhöhten Token im sichtbaren Desktop starten.
@@ -300,6 +330,151 @@ public sealed class Elevator
             if (primaryToken != IntPtr.Zero) CloseHandle(primaryToken);
             if (winlogonToken != IntPtr.Zero) CloseHandle(winlogonToken);
             if (hProc != IntPtr.Zero) CloseHandle(hProc);
+        }
+    }
+
+    /// <summary>
+    /// Gewährt der interaktiven Window-Station winsta0 und dem Desktop default
+    /// Vollzugriff für die angegebene SID. Damit darf der mit CreateProcessAsUser
+    /// gestartete Prozess ein Fenster erstellen (DESKTOP_CREATEWINDOW) und wird
+    /// SICHTBAR. Ohne diese ACEs startet er zwar (PID vorhanden), bleibt aber ohne
+    /// Fenster, weil user32 das Fenster-Erstellen am Desktop verweigert.
+    ///
+    /// Best-effort: Jeder Fehler wird nur per onStep gemeldet und verhindert den
+    /// Start NICHT. Es werden nur Handles geöffnet, die DACL geändert und die
+    /// Handles wieder geschlossen – die Window-Station des Dienstes bleibt unberührt
+    /// (KEIN SetProcessWindowStation).
+    /// </summary>
+    private static void GrantWindowStationAndDesktopAccess(SecurityIdentifier sid, Action<string> onStep)
+    {
+        var sidBytes = new byte[sid.BinaryLength];
+        sid.GetBinaryForm(sidBytes, 0);
+        var sidName = sid.Value;
+
+        // 1) Window-Station winsta0 öffnen (DACL lesen + ändern).
+        var hWinSta = OpenWindowStation("winsta0", false, READ_CONTROL | WRITE_DAC);
+        if (hWinSta == IntPtr.Zero)
+        {
+            onStep($"Warnung: OpenWindowStation(winsta0) fehlgeschlagen: {Marshal.GetLastPInvokeError()} (Fenster evtl. unsichtbar).");
+        }
+        else
+        {
+            try
+            {
+                // Für die Window-Station die ACE an Desktops vererben lassen, damit
+                // auch dynamisch erzeugte Desktops abgedeckt sind. Zusätzlich eine
+                // nicht-vererbbare ACE direkt für die Station selbst.
+                GrantObjectAccess(hWinSta, sidBytes, WINSTA_ALL_ACCESS, 0,
+                    $"Window-Station winsta0 ({sidName})", onStep);
+                GrantObjectAccess(hWinSta, sidBytes, WINSTA_ALL_ACCESS,
+                    CONTAINER_INHERIT_ACE | INHERIT_ONLY_ACE | OBJECT_INHERIT_ACE,
+                    $"Window-Station winsta0 (vererbt, {sidName})", onStep);
+            }
+            finally { CloseWindowStation(hWinSta); }
+        }
+
+        // 2) Desktop default öffnen (DACL lesen + ändern + CreateWindow-Recht).
+        var hDesktop = OpenDesktop("default", 0, false,
+            READ_CONTROL | WRITE_DAC | DESKTOP_CREATEWINDOW | DESKTOP_WRITEOBJECTS);
+        if (hDesktop == IntPtr.Zero)
+        {
+            onStep($"Warnung: OpenDesktop(default) fehlgeschlagen: {Marshal.GetLastPInvokeError()} (Fenster evtl. unsichtbar).");
+        }
+        else
+        {
+            try
+            {
+                GrantObjectAccess(hDesktop, sidBytes, DESKTOP_ALL_ACCESS, 0,
+                    $"Desktop default ({sidName})", onStep);
+            }
+            finally { CloseDesktop(hDesktop); }
+        }
+    }
+
+    /// <summary>
+    /// Fügt der DACL eines geöffneten User-Objekts (Window-Station oder Desktop) eine
+    /// Access-Allowed-ACE für <paramref name="sidBytes"/> hinzu und schreibt sie zurück.
+    /// Vorhandene ACEs bleiben erhalten (GetSecurityInfo -> neue ACL mit alten+neuer ACE).
+    /// Best-effort: Fehler werden nur per onStep gemeldet.
+    /// </summary>
+    private static void GrantObjectAccess(IntPtr handle, byte[] sidBytes, uint accessMask,
+        byte aceFlags, string label, Action<string> onStep)
+    {
+        // Bestehende DACL holen. ppSecurityDescriptor muss per LocalFree freigegeben
+        // werden; die DACL zeigt IN diesen SD (nicht separat freigeben).
+        var rc = GetSecurityInfo(handle, SE_WINDOW_OBJECT, DACL_SECURITY_INFORMATION,
+            IntPtr.Zero, IntPtr.Zero, out var pOldDacl, IntPtr.Zero, out var pSd);
+        if (rc != 0)
+        {
+            onStep($"Warnung: GetSecurityInfo({label}) fehlgeschlagen: {rc} (Fenster evtl. unsichtbar).");
+            return;
+        }
+
+        var pNewDacl = IntPtr.Zero;
+        try
+        {
+            // Größe der neuen ACL ermitteln: alte DACL-Nutzgröße + neue ACE.
+            uint oldAclSize = 0;
+            uint oldAceCount = 0;
+            if (pOldDacl != IntPtr.Zero)
+            {
+                var sizeInfo = new ACL_SIZE_INFORMATION();
+                if (GetAclInformation(pOldDacl, ref sizeInfo,
+                        (uint)Marshal.SizeOf<ACL_SIZE_INFORMATION>(), AclSizeInformation))
+                {
+                    oldAclSize = sizeInfo.AclBytesInUse;
+                    oldAceCount = sizeInfo.AceCount;
+                }
+            }
+
+            // Größe einer ACCESS_ALLOWED_ACE: Header (4) + AccessMask (4) + SID
+            //   minus dem bereits im Struct enthaltenen SidStart-DWORD (4).
+            var newAceSize = (uint)(Marshal.SizeOf<ACE_HEADER>() + sizeof(uint) + sidBytes.Length - sizeof(uint));
+            // ACL-Header ist 8 Bytes; falls keine alte DACL existierte, nur Header.
+            var baseSize = oldAclSize > 0 ? oldAclSize : 8u;
+            var newAclSize = baseSize + newAceSize + 8; // kleiner Puffer
+
+            pNewDacl = Marshal.AllocHGlobal((int)newAclSize);
+            if (!InitializeAcl(pNewDacl, newAclSize, ACL_REVISION))
+            {
+                onStep($"Warnung: InitializeAcl({label}) fehlgeschlagen: {Marshal.GetLastPInvokeError()}.");
+                return;
+            }
+
+            // Zuerst die neue ACE hinzufügen (an Index 0 – Allow vor evtl. geerbten
+            // Einträgen, unkritisch da es reine Allow-ACEs sind).
+            if (!AddAccessAllowedAceEx(pNewDacl, ACL_REVISION, aceFlags, accessMask, sidBytes))
+            {
+                onStep($"Warnung: AddAccessAllowedAceEx({label}) fehlgeschlagen: {Marshal.GetLastPInvokeError()}.");
+                return;
+            }
+
+            // Danach alle bestehenden ACEs kopieren, damit nichts verloren geht.
+            for (uint i = 0; i < oldAceCount; i++)
+            {
+                if (!GetAce(pOldDacl, i, out var pAce)) continue;
+                var header = Marshal.PtrToStructure<ACE_HEADER>(pAce);
+                AddAce(pNewDacl, ACL_REVISION, uint.MaxValue, pAce, header.AceSize);
+            }
+
+            if (!IsValidAcl(pNewDacl))
+            {
+                onStep($"Warnung: Neue DACL ungültig ({label}).");
+                return;
+            }
+
+            // Neue DACL zurückschreiben.
+            var sc = SetSecurityInfo(handle, SE_WINDOW_OBJECT, DACL_SECURITY_INFORMATION,
+                IntPtr.Zero, IntPtr.Zero, pNewDacl, IntPtr.Zero);
+            if (sc != 0)
+                onStep($"Warnung: SetSecurityInfo({label}) fehlgeschlagen: {sc} (Fenster evtl. unsichtbar).");
+            else
+                onStep($"Zugriff gewährt: {label}.");
+        }
+        finally
+        {
+            if (pNewDacl != IntPtr.Zero) Marshal.FreeHGlobal(pNewDacl);
+            if (pSd != IntPtr.Zero) LocalFree(pSd);
         }
     }
 
