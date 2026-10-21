@@ -201,6 +201,7 @@ public sealed class Elevator
         IntPtr primaryToken = IntPtr.Zero;
         // Für die Profil-Ermittlung brauchen wir außerdem das Kind-Token.
         IntPtr childToken = IntPtr.Zero;
+        IntPtr profileToken = IntPtr.Zero;   // dupliziertes Kind-Token für LoadUserProfile
         try
         {
             if (!OpenProcessToken(hProc, TOKEN_DUPLICATE | TOKEN_QUERY, out winlogonToken))
@@ -226,21 +227,40 @@ public sealed class Elevator
             // 5) Benutzerprofil des Kindes laden (best-effort), damit HKCU/AppData der
             //    Kind-Umgebung stimmen. Dafür das Kind-Token der Sitzung holen.
             var profileLoaded = false;
-            var profileInfo = new PROFILEINFO { dwSize = Marshal.SizeOf<PROFILEINFO>() };
+            var profileInfo = new PROFILEINFO
+            {
+                dwSize = Marshal.SizeOf<PROFILEINFO>(),
+                dwFlags = PI_NOUI,          // keine UI (sonst evtl. Hänger/Fehler)
+            };
             if (WTSQueryUserToken(consoleSession, out childToken))
             {
                 var childUser = ResolveUser(childToken);
                 onStep($"Kind-Konto der Sitzung: {childUser.Full}");
+                // Nur der reine SAM-Name (ohne Domain-Prefix) – ResolveUser liefert das schon.
                 profileInfo.lpUserName = childUser.Account;
-                // LoadUserProfile erwartet ein Token des betreffenden Benutzers.
-                if (LoadUserProfile(childToken, ref profileInfo))
+
+                // WICHTIG: Das WTSQueryUserToken-Token hat oft zu wenig Zugriffsrechte für
+                // LoadUserProfile (Fehler 5). Deshalb zu einem Primär-Token mit vollen
+                // Rechten (MAXIMUM_ALLOWED) duplizieren und DIESES verwenden.
+                if (DuplicateTokenEx(childToken, MAXIMUM_ALLOWED, IntPtr.Zero,
+                        SECURITY_IMPERSONATION_LEVEL.Impersonation, TOKEN_TYPE.TokenPrimary, out profileToken))
                 {
-                    profileLoaded = true;
-                    onStep("Benutzerprofil des Kindes geladen (HKCU/AppData verfügbar).");
+                    // Sicher als SYSTEM aufrufen (kein Impersonations-Rest) – LoadUserProfile
+                    // verlangt SeBackup/SeRestore des aufrufenden Prozesses (sind aktiviert).
+                    RevertToSelf();
+                    if (LoadUserProfile(profileToken, ref profileInfo))
+                    {
+                        profileLoaded = true;
+                        onStep("Benutzerprofil des Kindes geladen (HKCU/AppData verfügbar).");
+                    }
+                    else
+                    {
+                        onStep($"Warnung: LoadUserProfile fehlgeschlagen: {Marshal.GetLastPInvokeError()} (starte ohne Profil-Laden).");
+                    }
                 }
                 else
                 {
-                    onStep($"Warnung: LoadUserProfile fehlgeschlagen: {Marshal.GetLastPInvokeError()} (starte ohne Profil-Laden).");
+                    onStep($"Warnung: Token-Duplikat für Profil fehlgeschlagen: {Marshal.GetLastPInvokeError()} (starte ohne Profil).");
                 }
             }
             else
@@ -259,10 +279,11 @@ public sealed class Elevator
             }
             finally
             {
-                // Profil wieder entladen (Token des Kindes nötig, mit dem es geladen wurde).
-                if (profileLoaded && childToken != IntPtr.Zero)
+                // Profil wieder entladen – mit DEM Token, mit dem es geladen wurde
+                // (dem duplizierten profileToken).
+                if (profileLoaded && profileToken != IntPtr.Zero)
                 {
-                    try { UnloadUserProfile(childToken, profileInfo.hProfile); } catch { }
+                    try { UnloadUserProfile(profileToken, profileInfo.hProfile); } catch { }
                 }
             }
         }
@@ -272,6 +293,7 @@ public sealed class Elevator
         }
         finally
         {
+            if (profileToken != IntPtr.Zero) CloseHandle(profileToken);
             if (childToken != IntPtr.Zero) CloseHandle(childToken);
             if (primaryToken != IntPtr.Zero) CloseHandle(primaryToken);
             if (winlogonToken != IntPtr.Zero) CloseHandle(winlogonToken);

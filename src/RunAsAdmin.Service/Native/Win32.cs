@@ -202,6 +202,9 @@ internal static partial class Win32
     // --- Benutzerprofil laden/entladen (für HKCU/AppData beim SYSTEM-Start) ---
     internal const int PROCESS_QUERY_INFORMATION = 0x0400;
 
+    // LoadUserProfile: keine UI anzeigen (PI_NOUI).
+    internal const int PI_NOUI = 0x00000001;
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     internal struct PROFILEINFO
     {
