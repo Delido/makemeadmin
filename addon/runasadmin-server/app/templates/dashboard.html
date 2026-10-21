@@ -6,39 +6,89 @@
   <title>RunAsAdmin</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
   <style>
-    :root { --bg:#0E1116; --card:#1A202A; --stroke:#ffffff22; --text:#E6E9EE; --muted:#8A93A1; --accent:#2FBF71; --deny:#E05A4A; }
+    :root {
+      --bg:#0B0E13; --bg2:#10151D; --card:#161C26; --card2:#1B222E;
+      --stroke:#ffffff14; --stroke2:#ffffff22;
+      --text:#EAEDF2; --muted:#8B94A3; --faint:#5A6372;
+      --accent:#2FBF71; --accent2:#249E5C; --blue:#4C8DF6; --deny:#E05A4A; --warn:#E0A33C;
+    }
     * { box-sizing:border-box; }
-    body { margin:0; background:var(--bg); color:var(--text);
-           font-family:'Segoe UI',system-ui,sans-serif; padding:20px; }
-    h1 { font-size:22px; margin:0 0 4px; }
-    .sub { color:var(--muted); font-size:13px; margin-bottom:18px; }
-    .card { background:var(--card); border:1px solid var(--stroke); border-radius:14px;
-            padding:16px 18px; margin-bottom:16px; }
-    .card h2 { font-size:15px; margin:0 0 12px; color:var(--text); }
-    .req { display:flex; align-items:center; justify-content:space-between;
-           padding:10px 0; border-bottom:1px solid #ffffff10; }
-    .req:last-child { border-bottom:none; }
-    .req .who { font-size:14px; }
-    .req .meta { color:var(--muted); font-size:12px; }
-    button { border:none; border-radius:9px; padding:8px 14px; font-size:13px;
-             font-weight:600; cursor:pointer; color:#fff; }
-    .allow { background:var(--accent); } .deny { background:var(--deny); }
-    .always { background:#2A5BD7; }
+    body { margin:0; background:
+            radial-gradient(1200px 500px at 80% -10%, #16304522, transparent),
+            var(--bg);
+           color:var(--text); font-family:'Segoe UI Variable','Segoe UI',system-ui,sans-serif;
+           padding:22px; max-width:1100px; margin:0 auto; -webkit-font-smoothing:antialiased; }
+
+    /* Kopf */
+    .head { display:flex; align-items:center; gap:14px; margin-bottom:22px; }
+    .head .logo { width:44px; height:44px; border-radius:13px; flex:none;
+            background:linear-gradient(140deg,#2FBF71,#1C8049); display:flex;
+            align-items:center; justify-content:center; font-size:22px;
+            box-shadow:0 6px 20px #2fbf7133; }
+    .head h1 { font-size:22px; margin:0; font-weight:700; letter-spacing:-.2px; }
+    .head .sub { color:var(--muted); font-size:13px; margin-top:2px; }
+
+    /* Karten */
+    .card { background:linear-gradient(180deg,var(--card),var(--card2));
+            border:1px solid var(--stroke); border-radius:16px;
+            padding:18px 20px; margin-bottom:16px;
+            box-shadow:0 1px 0 #ffffff08 inset, 0 8px 24px #00000030; }
+    .card h2 { font-size:12px; margin:0 0 14px; color:var(--muted);
+            text-transform:uppercase; letter-spacing:.08em; font-weight:700; }
+
+    .row { display:flex; align-items:center; justify-content:space-between;
+           padding:11px 0; border-bottom:1px solid var(--stroke); gap:12px; }
+    .row:last-child { border-bottom:none; }
+    .row .who { font-size:14.5px; font-weight:600; }
+    .row .meta { color:var(--muted); font-size:12.5px; margin-top:2px; }
+
+    button { border:none; border-radius:10px; padding:8px 15px; font-size:13px;
+             font-weight:600; cursor:pointer; color:#fff; transition:filter .15s, transform .05s; }
+    button:hover { filter:brightness(1.1); } button:active { transform:translateY(1px); }
+    .allow { background:linear-gradient(180deg,var(--accent),var(--accent2)); }
+    .deny  { background:#3A2224; color:#F3A79B; border:1px solid #E05A4A44; }
+    .deny:hover { background:#4a272a; }
+    .always{ background:var(--blue); }
+    .ghost { background:#ffffff0d; color:var(--muted); border:1px solid var(--stroke2); }
+
     .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-    @media(max-width:720px){ .grid{ grid-template-columns:1fr; } }
-    .ev { display:flex; gap:10px; padding:5px 0; font-size:13px; }
-    .ev .t { color:var(--muted); width:130px; flex:none; font-variant-numeric:tabular-nums; }
+    @media(max-width:760px){ .grid{ grid-template-columns:1fr; } body{padding:16px;} }
+
+    /* Verlauf */
+    .ev { display:flex; align-items:flex-start; gap:12px; padding:9px 0;
+          border-bottom:1px solid var(--stroke); font-size:13.5px; }
+    .ev:last-child { border-bottom:none; }
+    .ev .ic { flex:none; width:24px; text-align:center; font-size:14px; line-height:1.4; }
+    .ev .body { flex:1; }
+    .ev .t { color:var(--faint); font-size:12px; font-variant-numeric:tabular-nums; }
+    .ev .pc { color:var(--muted); font-weight:600; }
+
     .muted { color:var(--muted); font-size:13px; }
-    canvas { max-height:220px; }
+    .empty { color:var(--faint); font-size:13px; padding:18px 0; text-align:center; }
+
+    /* Freigegebene Apps */
+    .pc-group { margin-bottom:14px; } .pc-group:last-child { margin-bottom:0; }
+    .pc-label { color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.06em;
+                text-transform:uppercase; margin-bottom:6px; }
+    .app-row { display:flex; align-items:center; justify-content:space-between;
+               padding:8px 0; border-bottom:1px solid var(--stroke); }
+    .app-row:last-child { border-bottom:none; }
+
+    canvas { height:200px !important; max-height:200px; }
   </style>
 </head>
 <body>
-  <h1>🛡️ RunAsAdmin</h1>
-  <div class="sub">Zentrale Steuerung und Verlauf der Kinder-PCs</div>
+  <div class="head">
+    <div class="logo">🛡️</div>
+    <div>
+      <h1>RunAsAdmin</h1>
+      <div class="sub">Zentrale Steuerung und Verlauf der Kinder-PCs</div>
+    </div>
+  </div>
 
   <div class="card">
     <h2>Benachrichtigung</h2>
-    <div class="req">
+    <div class="row">
       <div>
         {% if notify_configured %}
           <div class="who">Push-Dienst eingerichtet</div>
@@ -63,7 +113,7 @@
     <h2>Offene Anfragen</h2>
     {% if pending %}
       {% for r in pending %}
-      <div class="req">
+      <div class="row">
         <div>
           <div class="who">{{ r.user }} an {{ r.computer }}</div>
           <div class="meta">{% if r.reason %}{{ r.reason }} · {% endif %}möchte 15 Minuten Admin</div>
@@ -85,7 +135,7 @@
     <h2>Aktive Admin-Zeiten</h2>
     {% if active %}
       {% for s in active %}
-      <div class="req">
+      <div class="row">
         <div>
           <div class="who">{{ s.user }} an {{ s.computer }}</div>
           <div class="meta">seit {{ s.started | fmt_ts }} · Admin aktiv</div>
@@ -104,11 +154,13 @@
   <div class="grid">
     <div class="card">
       <h2>Admin-Zeiten pro Tag</h2>
-      <canvas id="perDay"></canvas>
+      {% if per_day %}<canvas id="perDay"></canvas>
+      {% else %}<div class="empty">Noch keine Admin-Zeiten.</div>{% endif %}
     </div>
     <div class="card">
       <h2>Meistgenutzte Admin-Programme</h2>
-      <canvas id="topApps"></canvas>
+      {% if top_apps %}<canvas id="topApps"></canvas>
+      {% else %}<div class="empty">Noch keine Daten.</div>{% endif %}
     </div>
   </div>
 
@@ -118,30 +170,30 @@
       {% if top_games %}
         <canvas id="topGames"></canvas>
       {% else %}
-        <div class="muted">Noch keine Spielstarts.</div>
+        <div class="empty">Noch keine Spielstarts.</div>
       {% endif %}
     </div>
     <div class="card">
       <h2>Freigegebene Apps je PC</h2>
       {% if reg_games %}
         {% for computer, games in reg_games.items() %}
-        <div style="margin-bottom:10px;">
-          <div class="muted" style="font-size:12px;margin-bottom:4px;">{{ computer }}</div>
+        <div class="pc-group">
+          <div class="pc-label">{{ computer }}</div>
           {% for game in games %}
-          <div class="req" style="padding:5px 0;">
-            <span>{{ game }}</span>
+          <div class="app-row">
+            <span style="font-size:14px;">{{ game }}</span>
             <form method="post" action="remove-game" style="margin:0;"
                   onsubmit="return confirm('Freigabe von {{ game }} auf {{ computer }} entfernen?');">
               <input type="hidden" name="computer" value="{{ computer }}">
               <input type="hidden" name="game" value="{{ game }}">
-              <button class="deny" style="padding:5px 10px;font-size:12px;">Entfernen</button>
+              <button class="deny" style="padding:6px 12px;font-size:12px;">Entfernen</button>
             </form>
           </div>
           {% endfor %}
         </div>
         {% endfor %}
       {% else %}
-        <div class="muted">Noch keine Apps dauerhaft freigegeben.</div>
+        <div class="empty">Noch keine Apps dauerhaft freigegeben.</div>
       {% endif %}
     </div>
   </div>
@@ -151,37 +203,42 @@
     {% if events %}
       {% for e in events %}
       <div class="ev">
-        <span class="t">{{ e.ts | fmt_ts }}</span>
-        <span>{{ e.computer }} · {{ e.type }}{% if e.detail %} – {{ e.detail }}{% endif %}</span>
+        <span class="ic">{{ e.icon }}</span>
+        <div class="body">
+          <div>{{ e.text }}</div>
+          <div class="t"><span class="pc">{{ e.computer }}</span> · {{ e.ts | fmt_ts }}</div>
+        </div>
       </div>
       {% endfor %}
     {% else %}
-      <div class="muted">Noch keine Ereignisse.</div>
+      <div class="empty">Noch keine Ereignisse.</div>
     {% endif %}
   </div>
 
   <script>
-    const perDay = {{ per_day | tojson }};
-    const topApps = {{ top_apps | tojson }};
-    const axis = { ticks:{color:'#8A93A1'}, grid:{color:'#ffffff14'} };
-    new Chart(document.getElementById('perDay'), {
-      type:'bar',
-      data:{ labels: perDay.map(d=>d.day),
-             datasets:[{ data: perDay.map(d=>d.n), backgroundColor:'#2FBF71', borderRadius:6 }] },
-      options:{ plugins:{legend:{display:false}}, scales:{x:axis,y:axis} }
-    });
-    new Chart(document.getElementById('topApps'), {
-      type:'bar', data:{ labels: topApps.map(a=>a[0]),
-             datasets:[{ data: topApps.map(a=>a[1]), backgroundColor:'#2A5BD7', borderRadius:6 }] },
-      options:{ indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:axis,y:axis} }
-    });
-    const topGames = {{ top_games | tojson }};
-    const elGames = document.getElementById('topGames');
-    if (elGames) new Chart(elGames, {
-      type:'bar', data:{ labels: topGames.map(a=>a[0]),
-             datasets:[{ data: topGames.map(a=>a[1]), backgroundColor:'#9B5DE5', borderRadius:6 }] },
-      options:{ indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:axis,y:axis} }
-    });
+    if (window.Chart) {
+      Chart.defaults.font.family = "'Segoe UI',system-ui,sans-serif";
+      Chart.defaults.color = '#8B94A3';
+    }
+    const axisX = { ticks:{color:'#8B94A3'}, grid:{display:false}, border:{display:false} };
+    const axisY = { ticks:{color:'#8B94A3'}, grid:{color:'#ffffff0e'}, border:{display:false} };
+    const noLegend = { plugins:{legend:{display:false}}, maintainAspectRatio:false };
+
+    function bar(id, rows, map, color, horizontal) {
+      const el = document.getElementById(id);
+      if (!el || !rows || !rows.length) return;
+      new Chart(el, {
+        type:'bar',
+        data:{ labels: rows.map(map.label),
+               datasets:[{ data: rows.map(map.val), backgroundColor:color, borderRadius:6, barThickness:'flex', maxBarThickness:30 }] },
+        options:{ ...noLegend, indexAxis: horizontal ? 'y' : 'x',
+                  scales: horizontal ? {x:axisY, y:axisX} : {x:axisX, y:axisY} }
+      });
+    }
+
+    bar('perDay',  {{ per_day  | tojson }}, {label:d=>d.day, val:d=>d.n}, '#2FBF71', false);
+    bar('topApps', {{ top_apps | tojson }}, {label:a=>a[0], val:a=>a[1]}, '#4C8DF6', true);
+    bar('topGames',{{ top_games| tojson }}, {label:a=>a[0], val:a=>a[1]}, '#9B5DE5', true);
   </script>
 </body>
 </html>

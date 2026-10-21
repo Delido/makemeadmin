@@ -67,6 +67,42 @@ def _fmt_ts(ts):
 _jinja.filters["fmt_ts"] = _fmt_ts
 
 
+# Event-Typ -> (Icon, lesbarer Text). {name} wird aus dem Detail gefuellt.
+_EVENT_LABELS = {
+    "timeadmin.granted":        ("🔓", "Adminrechte gewährt"),
+    "timeadmin.revoked":        ("🔒", "Adminrechte beendet"),
+    "timeadmin.denied":         ("🚫", "Anfrage abgelehnt"),
+    "timeadmin.local_pin_wrong":("⚠️", "Falsche PIN eingegeben"),
+    "launch.success":           ("▶️", "{name} gestartet"),
+    "game.launched":            ("🎮", "{name} gestartet"),
+    "games.registered":         ("📋", "Freigegebene Apps aktualisiert"),
+    "request.persisted":        ("➕", "{name} dauerhaft freigegeben"),
+    "request.denied":           ("🚫", "{name} abgelehnt"),
+    "app.removed":              ("🗑️", "{name} entfernt"),
+    "admin.demoted":            ("⬇️", "Konto heruntergestuft"),
+    "admin.permanent_warning":  ("⚠️", "Konto ist dauerhaft Admin"),
+    "decision.received":        ("✉️", "Entscheidung erhalten"),
+}
+
+
+def _humanize(events):
+    """Macht rohe Events (type+detail-JSON) zu lesbaren Zeilen fuer das Dashboard."""
+    out = []
+    for e in events:
+        icon, text = _EVENT_LABELS.get(e.get("type", ""), ("•", e.get("type", "")))
+        name = ""
+        d = _parse_detail(e.get("detail"))
+        if isinstance(d, dict):
+            name = d.get("game") or d.get("Name") or d.get("name") or ""
+        try:
+            text = text.format(name=name or "Programm")
+        except Exception:
+            pass
+        out.append({"ts": e.get("ts"), "computer": e.get("computer", "?"),
+                    "icon": icon, "text": text})
+    return out
+
+
 def render(name: str, **ctx) -> HTMLResponse:
     return HTMLResponse(_jinja.get_template(name).render(**ctx))
 
@@ -219,7 +255,7 @@ async def dashboard(request: Request):
     return render("dashboard.html",
         pending=db.pending_requests(),
         active=db.active_sessions(),
-        events=db.recent_events(60),
+        events=_humanize(db.recent_events(40)),
         per_day=db.sessions_per_day(),
         top_apps=db.top_apps(),
         top_games=db.top_games(),
