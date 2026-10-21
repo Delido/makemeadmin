@@ -236,7 +236,30 @@ public sealed class Installer
 
         Run("sc", $"failure {ServiceName} reset= 60 actions= restart/5000/restart/5000/restart/5000", ignoreError: true);
         Run("sc", $"start {ServiceName}");
+
+        // Warten, bis der Dienst wirklich RUNNING ist. Sonst kann eine sofort
+        // geöffnete GUI auf einen noch startenden Dienst treffen -> Pipe-Timeout
+        // ("operation timed out", Einstellungen scheinbar weg bis zum Neustart).
+        for (var i = 0; i < 20; i++)
+        {
+            if (ServiceIsRunning()) break;
+            System.Threading.Thread.Sleep(500);
+        }
         Step("Dienst installiert, gehärtet (nicht durch Benutzer stoppbar) und gestartet.");
+    }
+
+    private static bool ServiceIsRunning()
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("sc.exe", "query RunAsAdmin")
+            { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+            using var p = Process.Start(psi)!;
+            var outp = p.StandardOutput.ReadToEnd();
+            p.WaitForExit(5000);
+            return outp.Contains("RUNNING", StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
     }
 
     // --- Deinstallation ---

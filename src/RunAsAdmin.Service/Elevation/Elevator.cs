@@ -137,6 +137,158 @@ public sealed class Elevator
     }
 
     /// <summary>
+    /// Startet <paramref name="exePath"/> ERHÖHT (Administrator-Integrität) in der
+    /// sichtbaren Konsolensitzung des Kindes, OHNE UAC und OHNE dass das Kind-Konto
+    /// Admin wird. Der Dienst (SYSTEM) dupliziert dafür das Token von winlogon.exe
+    /// der aktiven Sitzung und startet den Prozess damit im Benutzer-Desktop.
+    ///
+    /// Gewählter Ansatz = MUSTER 2 (SYSTEM-Token aus winlogon der aktiven Sitzung):
+    /// Reine Standardbenutzer haben KEIN verknüpftes, erhöhtes Token (kein Split-Token),
+    /// daher ist Muster 1 (User-Token erhöhen) für sie unmöglich. Der einzige
+    /// zuverlässige Weg, OHNE UAC erhöht in der sichtbaren Sitzung zu starten, ist,
+    /// ein bereits erhöhtes SYSTEM-Token (winlogon.exe) zu duplizieren, dessen
+    /// Session-ID auf die Konsolensitzung zu setzen und damit zu starten.
+    ///
+    /// WICHTIGE EINSCHRÄNKUNG: Der so gestartete Prozess läuft im Sicherheitskontext
+    /// von SYSTEM (nicht als das Kind), nur sichtbar im Kind-Desktop. Das Benutzer-
+    /// profil des Kindes wird per LoadUserProfile geladen und als Umgebung mitgegeben,
+    /// damit HKCU/AppData stimmen – aber der Prozess-Token selbst bleibt SYSTEM.
+    /// Für Launcher mit Konto-Login / Anti-Cheat kann das bedeuten, dass sie im
+    /// SYSTEM-Kontext statt im Kind-Kontext laufen (z. B. falsches/neues Profil,
+    /// Login nicht persistent, Anti-Cheat verweigert SYSTEM).
+    /// </summary>
+    public LaunchResult LaunchElevatedAsService(string exePath, string? arguments, string? workingDir,
+        Action<string> onStep)
+    {
+        // Kein Impersonations-Rest auf dem Thread (sonst scheitern Token-Operationen
+        // mangels SeTcbPrivilege des Kind-Tokens).
+        RevertToSelf();
+
+        // SeTcbPrivilege aktivieren – nötig, um die Session-ID eines Tokens zu setzen
+        // und in einer anderen Sitzung zu starten.
+        EnablePrivilege(SE_TCB_NAME, onStep);
+
+        // 1) Aktive Konsolensitzung = Sitzung des angemeldeten Kindes.
+        var consoleSession = WTSGetActiveConsoleSessionId();
+        if (consoleSession == 0xFFFFFFFF)
+            return new(false, 0, "Keine aktive Konsolensitzung gefunden (niemand angemeldet?).");
+        onStep($"Aktive Konsolensitzung: {consoleSession}");
+
+        // 2) winlogon.exe der ZIEL-Sitzung finden (NICHT Session 0!) und dessen
+        //    SYSTEM-Token öffnen. winlogon läuft als SYSTEM mit voller Integrität.
+        var winlogonPid = FindWinlogonPid(consoleSession, onStep);
+        if (winlogonPid == 0)
+            return new(false, 0, $"Kein winlogon.exe in Sitzung {consoleSession} gefunden.");
+        onStep($"winlogon.exe der Sitzung {consoleSession}: PID {winlogonPid}");
+
+        var hProc = OpenProcess(PROCESS_QUERY_INFORMATION, false, winlogonPid);
+        if (hProc == IntPtr.Zero)
+            hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, winlogonPid);
+        if (hProc == IntPtr.Zero)
+            return new(false, 0, $"OpenProcess(winlogon {winlogonPid}) fehlgeschlagen: {Marshal.GetLastPInvokeError()}");
+
+        IntPtr winlogonToken = IntPtr.Zero;
+        IntPtr primaryToken = IntPtr.Zero;
+        // Für die Profil-Ermittlung brauchen wir außerdem das Kind-Token.
+        IntPtr childToken = IntPtr.Zero;
+        try
+        {
+            if (!OpenProcessToken(hProc, TOKEN_DUPLICATE | TOKEN_QUERY, out winlogonToken))
+                return new(false, 0, $"OpenProcessToken(winlogon) fehlgeschlagen: {Marshal.GetLastPInvokeError()}");
+            onStep("SYSTEM-Token von winlogon.exe geöffnet.");
+
+            // 3) Zu einem PRIMARY-Token (MAXIMUM_ALLOWED) duplizieren – nötig für
+            //    CreateProcessAsUser. Impersonation-Level nur als Zwischenschritt.
+            if (!DuplicateTokenEx(winlogonToken, MAXIMUM_ALLOWED, IntPtr.Zero,
+                    SECURITY_IMPERSONATION_LEVEL.Impersonation, TOKEN_TYPE.TokenPrimary, out primaryToken))
+                return new(false, 0, $"DuplicateTokenEx(winlogon) fehlgeschlagen: {Marshal.GetLastPInvokeError()}");
+            onStep("Primär-Token (erhöht) aus winlogon-Token dupliziert.");
+
+            // 4) Session-ID des Primär-Tokens explizit auf die Konsolensitzung setzen.
+            //    (winlogon der aktiven Sitzung hat sie zwar schon, aber wir erzwingen sie
+            //    zur Sicherheit – kostet nichts und ist robust.)
+            var sess = consoleSession;
+            if (!SetTokenInformation(primaryToken, TokenSessionId, ref sess, sizeof(uint)))
+                onStep($"Warnung: TokenSessionId setzen fehlgeschlagen: {Marshal.GetLastPInvokeError()} (fahre fort).");
+            else
+                onStep($"Token-Session auf {consoleSession} gesetzt.");
+
+            // 5) Benutzerprofil des Kindes laden (best-effort), damit HKCU/AppData der
+            //    Kind-Umgebung stimmen. Dafür das Kind-Token der Sitzung holen.
+            var profileLoaded = false;
+            var profileInfo = new PROFILEINFO { dwSize = Marshal.SizeOf<PROFILEINFO>() };
+            if (WTSQueryUserToken(consoleSession, out childToken))
+            {
+                var childUser = ResolveUser(childToken);
+                onStep($"Kind-Konto der Sitzung: {childUser.Full}");
+                profileInfo.lpUserName = childUser.Account;
+                // LoadUserProfile erwartet ein Token des betreffenden Benutzers.
+                if (LoadUserProfile(childToken, ref profileInfo))
+                {
+                    profileLoaded = true;
+                    onStep("Benutzerprofil des Kindes geladen (HKCU/AppData verfügbar).");
+                }
+                else
+                {
+                    onStep($"Warnung: LoadUserProfile fehlgeschlagen: {Marshal.GetLastPInvokeError()} (starte ohne Profil-Laden).");
+                }
+            }
+            else
+            {
+                onStep($"Warnung: Kein Kind-Token für Profil (WTSQueryUserToken: {Marshal.GetLastPInvokeError()}). Starte trotzdem.");
+            }
+
+            try
+            {
+                // 6) Prozess mit dem erhöhten Token im sichtbaren Desktop starten.
+                //    Umgebungsblock wird aus dem ERHÖHTEN Token gebildet (SYSTEM-Kontext);
+                //    das geladene Kind-Profil sorgt dennoch für korrekte HKCU-Registry.
+                var pid = StartProcessWithToken(primaryToken, exePath, arguments, workingDir, onStep);
+                onStep("Erhöht gestartet (SYSTEM-Token aus winlogon, Muster 2).");
+                return new(true, pid, "Prozess erhöht gestartet (SYSTEM-Kontext im Kind-Desktop).");
+            }
+            finally
+            {
+                // Profil wieder entladen (Token des Kindes nötig, mit dem es geladen wurde).
+                if (profileLoaded && childToken != IntPtr.Zero)
+                {
+                    try { UnloadUserProfile(childToken, profileInfo.hProfile); } catch { }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            return new(false, 0, ex.Message);
+        }
+        finally
+        {
+            if (childToken != IntPtr.Zero) CloseHandle(childToken);
+            if (primaryToken != IntPtr.Zero) CloseHandle(primaryToken);
+            if (winlogonToken != IntPtr.Zero) CloseHandle(winlogonToken);
+            if (hProc != IntPtr.Zero) CloseHandle(hProc);
+        }
+    }
+
+    /// <summary>
+    /// Findet die PID von winlogon.exe der angegebenen Sitzung. winlogon existiert
+    /// pro interaktiver Sitzung; die Instanz mit passender SessionId wird genommen.
+    /// </summary>
+    private static int FindWinlogonPid(uint sessionId, Action<string> onStep)
+    {
+        foreach (var p in Process.GetProcessesByName("winlogon"))
+        {
+            try
+            {
+                if ((uint)p.SessionId == sessionId) return p.Id;
+            }
+            catch { }
+            finally { p.Dispose(); }
+        }
+        onStep($"winlogon.exe für Sitzung {sessionId} nicht gefunden.");
+        return 0;
+    }
+
+    /// <summary>
     /// Holt ein Benutzer-Token für die aktive Sitzung. Versucht zuerst die
     /// Konsolensitzung, dann (Fallback) die erste aktive Sitzung aus der Liste.
     /// </summary>

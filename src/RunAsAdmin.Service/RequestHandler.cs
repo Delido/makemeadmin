@@ -450,16 +450,55 @@ public sealed class RequestHandler
         }
 
         _log.Write("game.launch_requested", new { app.Name, requestingUser });
+
+        // Weg A: Der Dienst (SYSTEM) startet das Programm selbst ERHÖHT in der
+        // sichtbaren Sitzung des Kindes – kein UAC, Kind bleibt Standardbenutzer.
+        // (Der frühere Task-Scheduler-Weg konnte als Standardbenutzer NICHT erhöhen
+        //  und brachte deshalb doch eine UAC-Abfrage.)
+        var elevated = _elevator.LaunchElevatedAsService(app.Path, app.Arguments, null,
+            step => _log.Write("game.launch_step", new { app.Name, step }));
+        if (elevated.Ok)
+        {
+            _log.Write("game.launched", new { game = app.Name, user = requestingUser, elevated.ProcessId });
+            _log.Write("launch.success", new { app.Name, via = "service-elevated", decision = "Game" });
+            return new ElevationResponse { State = RequestState.Approved, Decision = "Game",
+                Message = $"{app.Name} wird gestartet." };
+        }
+        _log.Write("game.elevated_failed", new { app.Name, detail = elevated.Detail });
+
+        // Rückfall: über die geplante Aufgabe (hilft, wenn das Konto doch Admin ist).
         var (ok, msg) = TryLaunchViaTask(app);
         if (ok)
         {
-            // Dediziertes Event mit sauberem Spielnamen -> Add-on-Statistik.
             _log.Write("game.launched", new { game = app.Name, user = requestingUser });
             _log.Write("launch.success", new { app.Name, via = "task", decision = "Game" });
             return new ElevationResponse { State = RequestState.Approved, Decision = "Game", Message = msg };
         }
         return new ElevationResponse { State = RequestState.Error, Decision = "Game",
-            Message = $"Start fehlgeschlagen: {msg}" };
+            Message = $"Start fehlgeschlagen: {elevated.Detail}" };
+    }
+
+    /// <summary>
+    /// Startet den Windows-Dienst kurz neu, damit geänderte Einstellungen (Modus,
+    /// Server-Adresse/Token) wirksam werden. Läuft über eine losgelöste cmd, die erst
+    /// wartet (damit die Antwort noch zum Client geht) und dann sc stop/start macht.
+    /// </summary>
+    private void ScheduleServiceRestart()
+    {
+        try
+        {
+            var cmd = "/c timeout /t 2 /nobreak >nul & sc stop RunAsAdmin >nul 2>&1 & " +
+                      "ping 127.0.0.1 -n 3 >nul & sc start RunAsAdmin >nul 2>&1";
+            var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", cmd)
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+            };
+            System.Diagnostics.Process.Start(psi);
+            _log.Write("service.restart_scheduled", new { });
+        }
+        catch (Exception ex) { _log.Write("service.restart_failed", new { error = ex.Message }); }
     }
 
     /// <summary>
@@ -696,8 +735,14 @@ public sealed class RequestHandler
         {
             if (!string.IsNullOrEmpty(_cfg.SourcePath)) _cfg.Save(_cfg.SourcePath);
             _log.Write("settings.saved", new { requestingUser, mode = _cfg.Mode.ToString(), ha.BaseUrl, ha.Enabled, serverUrl = sv.BaseUrl });
+
+            // Die Anbindung (Approver/EventReporter) wird beim Dienststart aus der
+            // Config gebaut. Damit geänderte Adresse/Token/Modus WIRKEN, den Dienst
+            // kurz neu starten. Sonst meldet er weiter an die alte Stelle.
+            ScheduleServiceRestart();
+
             return new SettingsResponse { State = RequestState.Approved, PinIsSet = true,
-                Message = "Einstellungen gespeichert." };
+                Message = "Einstellungen gespeichert. Der Dienst startet kurz neu." };
         }
         catch (Exception ex)
         {

@@ -196,6 +196,30 @@ internal static partial class Win32
     internal const int ERROR_NO_SUCH_MEMBER = 1387;
     internal const int ERROR_MEMBER_NOT_IN_ALIAS = 1377;
 
+    // --- Benutzerprofil laden/entladen (für HKCU/AppData beim SYSTEM-Start) ---
+    internal const int PROCESS_QUERY_INFORMATION = 0x0400;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    internal struct PROFILEINFO
+    {
+        public int dwSize;
+        public int dwFlags;
+        [MarshalAs(UnmanagedType.LPWStr)] public string? lpUserName;
+        [MarshalAs(UnmanagedType.LPWStr)] public string? lpProfilePath;
+        [MarshalAs(UnmanagedType.LPWStr)] public string? lpDefaultPath;
+        [MarshalAs(UnmanagedType.LPWStr)] public string? lpServerName;
+        [MarshalAs(UnmanagedType.LPWStr)] public string? lpPolicyPath;
+        public IntPtr hProfile;
+    }
+
+    [DllImport("userenv.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool LoadUserProfile(IntPtr hToken, ref PROFILEINFO lpProfileInfo);
+
+    [LibraryImport("userenv.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool UnloadUserProfile(IntPtr hToken, IntPtr hProfile);
+
     internal enum SID_NAME_USE { User = 1, Group, Domain, Alias, WellKnownGroup, DeletedAccount, Invalid, Unknown, Computer, Label }
 
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
