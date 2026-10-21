@@ -115,9 +115,12 @@ def check_token(token: str | None):
         raise HTTPException(status_code=403, detail="Ungueltiges Token")
 
 
-async def ha_notify(title: str, message: str) -> tuple[bool, str]:
+async def ha_notify(title: str, message: str, actions: list[dict] | None = None,
+                    tag: str | None = None) -> tuple[bool, str]:
     """
     Push ueber den HA-Supervisor an den konfigurierten Notify-Dienst.
+    actions = Liste von {"action": "...", "title": "..."} fuer Buttons in der Push.
+    tag = Gruppierung, damit eine Folge-Push dieselbe ersetzen/schliessen kann.
     Gibt (ok, detail) zurueck und schreibt bei Problemen eine sichtbare Logzeile.
     """
     if not NOTIFY_SERVICE:
@@ -132,10 +135,17 @@ async def ha_notify(title: str, message: str) -> tuple[bool, str]:
         svc = svc[len("notify."):]
     url = f"http://supervisor/core/api/services/notify/{svc}"
     headers = {"Authorization": f"Bearer {SUPERVISOR_TOKEN}"}
+    payload: dict = {"title": title, "message": message}
+    data_block: dict = {}
+    if actions:
+        data_block["actions"] = actions
+    if tag:
+        data_block["tag"] = tag
+    if data_block:
+        payload["data"] = data_block
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(url, headers=headers,
-                                  json={"title": title, "message": message})
+            r = await client.post(url, headers=headers, json=payload)
         if r.status_code < 300:
             print(f"[notify] gesendet an '{svc}' ({r.status_code}).", flush=True)
             return True, f"gesendet ({r.status_code})"
@@ -145,6 +155,67 @@ async def ha_notify(title: str, message: str) -> tuple[bool, str]:
     except Exception as ex:
         print(f"[notify] AUSNAHME an '{svc}': {ex}", flush=True)
         return False, str(ex)
+
+
+async def _handle_action(action: str):
+    """Verarbeitet einen Button-Klick aus der Handy-Push (RAA_<ENTSCHEIDUNG>|<rid>)."""
+    if not action or "|" not in action or not action.startswith("RAA_"):
+        return
+    kind, rid = action.split("|", 1)
+    state = {"RAA_ALLOW": "allow", "RAA_ALWAYS": "allow_always",
+             "RAA_DENY": "deny"}.get(kind)
+    if not state:
+        return
+    db.decide(rid, state, "handy")
+    print(f"[action] {kind} fuer {rid} -> {state}", flush=True)
+
+
+async def _action_listener():
+    """
+    Abonniert das HA-Event 'mobile_app_notification_action' ueber die WebSocket-API
+    und verarbeitet die Button-Klicks aus den Push-Benachrichtigungen. Laeuft als
+    Hintergrund-Task mit automatischem Reconnect. Nutzt den SUPERVISOR_TOKEN.
+    """
+    import asyncio
+    import websockets  # erst hier importieren, damit die App auch ohne Paket startet
+
+    if not SUPERVISOR_TOKEN:
+        print("[action] Listener aus: kein SUPERVISOR_TOKEN.", flush=True)
+        return
+
+    ws_url = "ws://supervisor/core/api/websocket"
+    while True:
+        try:
+            async with websockets.connect(ws_url, ping_interval=30) as ws:
+                # 1) auth_required -> auth senden
+                await ws.recv()
+                await ws.send(_json.dumps({"type": "auth", "access_token": SUPERVISOR_TOKEN}))
+                auth = _json.loads(await ws.recv())
+                if auth.get("type") != "auth_ok":
+                    print(f"[action] Auth fehlgeschlagen: {auth}", flush=True)
+                    await asyncio.sleep(10)
+                    continue
+                # 2) Event abonnieren
+                await ws.send(_json.dumps({"id": 1, "type": "subscribe_events",
+                                           "event_type": "mobile_app_notification_action"}))
+                print("[action] Listener verbunden, abonniert.", flush=True)
+                async for raw in ws:
+                    try:
+                        m = _json.loads(raw)
+                        if m.get("type") == "event":
+                            ev_data = m.get("event", {}).get("data", {})
+                            await _handle_action(ev_data.get("action", ""))
+                    except Exception as ex:
+                        print(f"[action] Event-Fehler: {ex}", flush=True)
+        except Exception as ex:
+            print(f"[action] WS-Verbindung weg ({ex}); neuer Versuch in 10s.", flush=True)
+            await asyncio.sleep(10)
+
+
+@app.on_event("startup")
+async def _start_listener():
+    import asyncio
+    asyncio.create_task(_action_listener())
 
 
 # ---------------- API fuer die Kinder-PCs ----------------
@@ -157,11 +228,21 @@ async def api_request(req: Request):
     user = data.get("User", "?")
     rid = data.get("RequestId") or os.urandom(8).hex()
     reason = data.get("Reason") or ""
+    app_name = data.get("AppName") or ""
     db.seen(computer)
     db.add_request(rid, computer, user, reason)
-    await ha_notify("Adminrechte angefragt",
-                    f"{user} an {computer} möchte 15 Minuten Admin. "
-                    f"Im RunAsAdmin-Dashboard erlauben/ablehnen.")
+    # Actionable Notification: Buttons direkt in der Handy-Push. Die action-IDs
+    # kodieren die Entscheidung + RequestId; der WebSocket-Listener wertet sie aus.
+    msg = f"{user} an {computer} möchte 15 Minuten Admin."
+    if app_name:
+        msg = f"{user} an {computer} möchte '{app_name}' starten (15 Min Admin)."
+    await ha_notify("Adminrechte angefragt", msg,
+                    actions=[
+                        {"action": f"RAA_ALLOW|{rid}",  "title": "15 Min erlauben"},
+                        {"action": f"RAA_ALWAYS|{rid}", "title": "Immer erlauben"},
+                        {"action": f"RAA_DENY|{rid}",   "title": "Ablehnen"},
+                    ],
+                    tag=f"raa_{rid}")
     return {"RequestId": rid, "State": "pending"}
 
 
