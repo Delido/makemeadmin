@@ -174,14 +174,14 @@ public partial class App : System.Windows.Application
 
     private void StartAutoUpdate()
     {
-        // Erste Prüfung nach 2 Minuten (nach dem Start), danach stündlich.
+        // Erste Prüfung nach 2 Minuten (nach dem Start), danach 1x täglich.
         _updateTimer = new System.Windows.Threading.DispatcherTimer
         {
             Interval = TimeSpan.FromMinutes(2),
         };
         _updateTimer.Tick += async (_, _) =>
         {
-            _updateTimer!.Interval = TimeSpan.FromHours(1); // ab jetzt stündlich
+            _updateTimer!.Interval = TimeSpan.FromHours(24); // ab jetzt 1x täglich
             await CheckAndApplyUpdateAsync();
         };
         _updateTimer.Start();

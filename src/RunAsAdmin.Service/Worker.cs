@@ -152,31 +152,62 @@ public sealed class Worker : BackgroundService
     }
 
     /// <summary>
-    /// Startet die Tray-GUI in der aktiven Benutzersitzung, falls sie nicht läuft.
-    /// So ist sie nach einem Dienst-/Update-Neustart automatisch wieder da.
+    /// Stellt sicher, dass die Tray-GUI in der aktiven Benutzersitzung läuft.
+    /// Läuft im Hintergrund MIT WIEDERHOLUNGEN: direkt nach einem Update-Neustart
+    /// ist die Benutzersitzung / das Token oft noch nicht bereit und die frisch
+    /// kopierte Gui.exe evtl. kurz gesperrt – ein einmaliger Versuch scheitert dann
+    /// still und das Tray bleibt weg, bis sich das Kind neu anmeldet. Darum wird
+    /// mehrfach mit wachsendem Abstand versucht.
     /// </summary>
     private static void TryEnsureTrayGui(AuditLog log)
     {
-        try
-        {
-            // GUI liegt neben dem Dienst: ...\RunAsAdmin\Gui\RunAsAdmin.Gui.exe
-            var serviceDir = Path.GetDirectoryName(Environment.ProcessPath) ?? "";
-            var guiExe = Path.Combine(serviceDir, "Gui", "RunAsAdmin.Gui.exe");
-            if (!File.Exists(guiExe)) { log.Write("gui.autostart_skip", new { reason = "exe fehlt", guiExe }); return; }
+        // Nicht den Dienststart blockieren – in eigenem Thread mit Retries.
+        new Thread(() => EnsureTrayGuiWithRetries(log)) { IsBackground = true }.Start();
+    }
 
-            // Evtl. hängende/alte GUI-Instanz beenden, dann frisch im Tray starten.
-            // (Nach einem Update koennte eine alte GUI ohne sichtbares Tray laufen.)
-            foreach (var p in System.Diagnostics.Process.GetProcessesByName("RunAsAdmin.Gui"))
+    private static void EnsureTrayGuiWithRetries(AuditLog log)
+    {
+        // GUI liegt neben dem Dienst: ...\RunAsAdmin\Gui\RunAsAdmin.Gui.exe
+        var serviceDir = Path.GetDirectoryName(Environment.ProcessPath) ?? "";
+        var guiExe = Path.Combine(serviceDir, "Gui", "RunAsAdmin.Gui.exe");
+
+        // Wartezeiten (s) zwischen den Versuchen – deckt Anmeldung + Update-Robocopy ab.
+        int[] delays = { 3, 4, 5, 8, 10, 15, 30 };
+
+        // Alte/hängende GUI EINMAL vorab beenden (nach Update evtl. ohne Tray).
+        foreach (var p in System.Diagnostics.Process.GetProcessesByName("RunAsAdmin.Gui"))
+        {
+            try { p.Kill(); p.WaitForExit(2000); } catch { }
+        }
+
+        for (int attempt = 0; attempt < delays.Length; attempt++)
+        {
+            Thread.Sleep(TimeSpan.FromSeconds(delays[attempt]));
+
+            // Läuft schon eine GUI (z. B. der Autostart-Shortcut war schneller)? Fertig.
+            if (System.Diagnostics.Process.GetProcessesByName("RunAsAdmin.Gui").Length > 0)
             {
-                try { p.Kill(); p.WaitForExit(2000); } catch { }
+                log.Write("gui.autostart_already_running", new { attempt });
+                return;
             }
 
-            // Kurz warten, bis die Benutzersitzung bereit ist.
-            Thread.Sleep(3000);
-            var r = new Elevation.Elevator().LaunchInUserSession(guiExe, "/tray",
-                step => log.Write("gui.autostart_step", new { step }));
-            log.Write("gui.autostart", new { r.Ok, r.Detail, r.ProcessId });
+            if (!File.Exists(guiExe))
+            {
+                // Direkt nach dem Update evtl. noch nicht fertig kopiert – weiter versuchen.
+                log.Write("gui.autostart_waiting", new { reason = "exe fehlt (noch?)", attempt, guiExe });
+                continue;
+            }
+
+            try
+            {
+                var r = new Elevation.Elevator().LaunchInUserSession(guiExe, "/tray",
+                    step => log.Write("gui.autostart_step", new { attempt, step }));
+                log.Write("gui.autostart", new { attempt, r.Ok, r.Detail, r.ProcessId });
+                if (r.Ok) return; // geschafft
+            }
+            catch (Exception ex) { log.Write("gui.autostart_error", new { attempt, error = ex.Message }); }
         }
-        catch (Exception ex) { log.Write("gui.autostart_error", new { error = ex.Message }); }
+
+        log.Write("gui.autostart_gave_up", new { guiExe });
     }
 }
