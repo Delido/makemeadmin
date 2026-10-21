@@ -19,6 +19,21 @@ public enum PipeVerb
     SaveSettings = 6,
     /// <summary>Prüfen, ob schon eine Eltern-PIN gesetzt ist.</summary>
     PinStatus = 7,
+    /// <summary>Verlauf der letzten Ereignisse abfragen (für die GUI-Anzeige).</summary>
+    History = 8,
+}
+
+/// <summary>Ein Verlaufseintrag für die GUI.</summary>
+public sealed class HistoryItem
+{
+    public string Time { get; set; } = "";
+    public string Text { get; set; } = "";
+    public string Kind { get; set; } = ""; // info | grant | deny
+}
+
+public sealed class HistoryResponse
+{
+    public List<HistoryItem> Items { get; set; } = new();
 }
 
 /// <summary>Umschlag für alle Pipe-Nachrichten.</summary>

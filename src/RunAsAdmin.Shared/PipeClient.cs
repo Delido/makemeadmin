@@ -32,6 +32,13 @@ public static class PipeClient
                ?? new ElevationResponse { State = RequestState.Error, Message = "Keine Antwort erhalten." };
     }
 
+    /// <summary>Holt den Verlauf der letzten Ereignisse.</summary>
+    public static async Task<HistoryResponse> HistoryAsync(CancellationToken ct = default)
+    {
+        var line = await SendAsync(new PipeMessage { Verb = PipeVerb.History }, ct);
+        return (line is null ? null : AppConfig.Deserialize<HistoryResponse>(line)) ?? new HistoryResponse();
+    }
+
     /// <summary>Fragt, ob schon eine Eltern-PIN gesetzt ist.</summary>
     public static async Task<SettingsResponse> PinStatusAsync(CancellationToken ct = default)
     {

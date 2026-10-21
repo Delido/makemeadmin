@@ -1,261 +1,221 @@
-using System.IO;
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
+using System.Windows.Threading;
 using RunAsAdmin.Shared;
+using Color = System.Windows.Media.Color;
+using SolidColorBrush = System.Windows.Media.SolidColorBrush;
+using Orientation = System.Windows.Controls.Orientation;
 
 namespace RunAsAdmin.Gui;
 
 public partial class MainWindow : Window
 {
-    /// <summary>true, wenn die App wirklich beendet wird (nicht nur ins Tray).</summary>
     public bool IsExiting { get; set; }
+    private CancellationTokenSource? _cts;
+    private readonly DispatcherTimer _statusTimer;
 
     public MainWindow()
     {
         InitializeComponent();
-        Loaded += async (_, _) => await LoadTilesAsync();
+        _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        _statusTimer.Tick += async (_, _) => await RefreshStatusAsync();
+        Loaded += async (_, _) => { _statusTimer.Start(); await RefreshStatusAsync(); };
+        Closed += (_, _) => _statusTimer.Stop();
     }
 
-    private async Task LoadTilesAsync()
+    // ---------- Navigation ----------
+    private void Nav_Checked(object sender, RoutedEventArgs e)
     {
-        Tiles.Items.Clear();
-        AppListResponse list;
-        try
-        {
-            list = await PipeClient.ListAppsAsync();
-        }
-        catch (Exception ex)
-        {
-            ShowResult(false, "Dienst nicht erreichbar",
-                "Der RunAsAdmin-Dienst läuft nicht. Bitte einen Erwachsenen fragen.\n\n" + ex.Message);
-            return;
-        }
+        if (PageStart is null) return; // noch nicht geladen
+        PageStart.Visibility = NavStart.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        PageHistory.Visibility = NavHistory.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        PageStatus.Visibility = NavStatus.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
 
-        // Sonderkachel: 15 Minuten volle Adminrechte (immer mit Freigabe).
-        var timeTile = new TileButton
+        if (NavStart.IsChecked == true) PageTitle.Text = "Start";
+        else if (NavHistory.IsChecked == true) { PageTitle.Text = "Verlauf"; _ = LoadHistoryAsync(); }
+        else if (NavStatus.IsChecked == true) { PageTitle.Text = "Status"; _ = LoadStatusAsync(); }
+        else if (NavSettings.IsChecked == true)
         {
-            Style = (Style)FindResource("Tile"),
-            Content = "15 Minuten Admin",
-            Hint = "Papa muss erlauben",
-            Glyph = "⏱",
-            TileKind = 3, // orange
-            Tag = "__TIME__",
-        };
-        timeTile.Click += TimeTile_Click;
-        Tiles.Items.Add(timeTile);
-        _ = RefreshTimeStatusAsync(timeTile);
-
-        // Nur installierte Programme anzeigen (nicht gefundene ausblenden).
-        var available = list.Apps.Where(a => a.Available).ToList();
-        foreach (var app in available)
-        {
-            var btn = new TileButton
-            {
-                Style = (Style)FindResource("Tile"),
-                Content = app.Name,
-                Hint = app.AutoApprove ? "startet sofort" : "Papa muss kurz erlauben",
-                Glyph = app.AutoApprove ? "⚡" : "🔒",
-                IsEnabled = true,
-                Tag = app,
-                TileKind = app.AutoApprove ? 0 : 1,
-            };
-            btn.Click += Tile_Click;
-            Tiles.Items.Add(btn);
+            PageTitle.Text = "Start";
+            NavStart.IsChecked = true;      // Settings öffnet ein eigenes Fenster
+            new SettingsWindow { Owner = this }.ShowDialog();
         }
-        Footer.Text = $"{available.Count} Programme · RunAsAdmin";
     }
 
-    private async void TimeTile_Click(object sender, RoutedEventArgs e)
+    // ---------- Admin anfragen ----------
+    private async void Request_Click(object sender, RoutedEventArgs e)
     {
-        OverlayIcon.Text = "⏱";
-        OverlayTitle.Text = "Warte auf Freigabe von Papa…";
-        OverlayText.Text = "15 Minuten volle Adminrechte angefragt.";
-        OverlayBar.Visibility = Visibility.Visible;
-        OverlayClose.Visibility = Visibility.Collapsed;
-        Overlay.Visibility = Visibility.Visible;
+        _cts = new CancellationTokenSource();
+        ShowOverlay("⏳", "Warte auf Freigabe von Papa…", "Das kann bis zu 2 Minuten dauern.", waiting: true, cancelable: true);
         try
         {
-            var resp = await PipeClient.GrantTimeAsync();
+            var resp = await PipeClient.GrantTimeAsync(ct: _cts.Token);
             var ok = resp.State == RequestState.Approved;
-            ShowResult(ok, ok ? "Du bist 15 Minuten Admin!" : "Nicht erlaubt", resp.Message);
-            if (sender is TileButton t) _ = RefreshTimeStatusAsync(t);
+            ShowOverlay(ok ? "✅" : "🚫",
+                ok ? "Du bist jetzt 15 Minuten Admin!" : TitleFor(resp),
+                resp.Message, waiting: false);
+            await RefreshStatusAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            ShowOverlay("🚫", "Abgebrochen", "Du hast die Anfrage abgebrochen.", waiting: false);
         }
         catch (Exception ex)
         {
-            ShowResult(false, "Es hat nicht geklappt", ex.Message);
+            ShowOverlay("🚫", "Es hat nicht geklappt", ex.Message, waiting: false);
         }
     }
 
-    private static async Task RefreshTimeStatusAsync(TileButton tile)
+    private static string TitleFor(TimeAdminResponse r) => r.Decision switch
+    {
+        "Timeout" => "Keine Antwort",
+        "AlreadyActive" => "Schon aktiv",
+        "Policy" => "Nicht eingerichtet",
+        _ => "Nicht erlaubt",
+    };
+
+    // ---------- Status (Start-Seite + Tray) ----------
+    private async Task RefreshStatusAsync()
     {
         try
         {
             var st = await PipeClient.TimeStatusAsync();
             if (st.Active)
             {
-                tile.Content = "Admin aktiv";
-                tile.Hint = $"noch {Math.Max(1, st.RemainingSeconds / 60)} Min";
+                var min = Math.Max(1, st.RemainingSeconds / 60);
+                StatusDot.Foreground = new SolidColorBrush(Color.FromRgb(0x2F, 0xBF, 0x71));
+                StatusTitle.Text = "Adminrechte aktiv";
+                StatusDetail.Text = $"Noch {min} Minute{(min == 1 ? "" : "n")}. Du kannst jetzt Programme als Admin starten.";
+                RequestBtn.IsEnabled = false;
+                RequestBtn.Content = $"Aktiv – noch {min} Min";
             }
             else
             {
-                tile.Content = "15 Minuten Admin";
-                tile.Hint = "Papa muss erlauben";
+                StatusDot.Foreground = new SolidColorBrush(Color.FromRgb(0x5A, 0x63, 0x72));
+                StatusTitle.Text = "Keine Adminrechte aktiv";
+                StatusDetail.Text = "Du bist normaler Benutzer.";
+                RequestBtn.IsEnabled = true;
+                RequestBtn.Content = "Adminrechte anfragen (15 Min)";
             }
         }
-        catch { /* Status ist optional */ }
+        catch
+        {
+            StatusTitle.Text = "Dienst nicht erreichbar";
+            StatusDetail.Text = "Bitte einen Erwachsenen fragen.";
+        }
     }
 
-    private CancellationTokenSource? _cts;
-
-    private async void Tile_Click(object sender, RoutedEventArgs e)
+    // ---------- Verlauf ----------
+    private async Task LoadHistoryAsync()
     {
-        if (sender is not TileButton btn || btn.Tag is not AppInfo app) return;
+        HistoryList.Items.Clear();
+        HistoryResponse hist;
+        try { hist = await PipeClient.HistoryAsync(); }
+        catch { return; }
 
-        _cts = new CancellationTokenSource();
-        ShowWaiting(app);
+        if (hist.Items.Count == 0)
+        {
+            HistoryList.Items.Add(MutedText("Noch keine Ereignisse heute."));
+            return;
+        }
+        foreach (var it in hist.Items)
+            HistoryList.Items.Add(HistoryRow(it));
+    }
+
+    private static UIElement HistoryRow(HistoryItem it)
+    {
+        var dot = it.Kind switch
+        {
+            "grant" => Color.FromRgb(0x2F, 0xBF, 0x71),
+            "deny" => Color.FromRgb(0xE0, 0x5A, 0x4A),
+            _ => Color.FromRgb(0x5A, 0x63, 0x72),
+        };
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+        panel.Children.Add(new TextBlock { Text = "●", Foreground = new SolidColorBrush(dot), FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
+        panel.Children.Add(new TextBlock { Text = it.Time, Foreground = new SolidColorBrush(Color.FromRgb(0x8A,0x93,0xA1)),
+            FontSize = 12.5, Width = 44, VerticalAlignment = VerticalAlignment.Center });
+        panel.Children.Add(new TextBlock { Text = it.Text, Foreground = new SolidColorBrush(Color.FromRgb(0xE6,0xE9,0xEE)),
+            FontSize = 13.5, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap });
+        return new Border { Padding = new Thickness(4, 2, 4, 2), Child = panel };
+    }
+
+    private static TextBlock MutedText(string t) => new()
+    { Text = t, Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x93, 0xA1)), FontSize = 13 };
+
+    // ---------- Status-Seite ----------
+    private async Task LoadStatusAsync()
+    {
+        StatusInfo.Children.Clear();
+        var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "?";
+        StatusInfo.Children.Add(InfoRow("Version", version));
         try
         {
-            var resp = await PipeClient.RunAsync(app.Name, ct: _cts.Token);
-            var ok = resp.State == RequestState.Approved;
-            ShowResult(ok, ok ? "Los geht's!" : TitleFor(resp), resp.Message);
+            var s = await PipeClient.GetSettingsAsync();
+            var ha = s.Settings;
+            StatusInfo.Children.Add(InfoRow("Home Assistant", ha?.Enabled == true ? "verbunden" : "nicht aktiv"));
+            StatusInfo.Children.Add(InfoRow("Adresse", string.IsNullOrEmpty(ha?.BaseUrl) ? "—" : ha!.BaseUrl));
+            StatusInfo.Children.Add(InfoRow("Geheimnis", ha?.SecretIsSet == true ? "gesetzt" : "fehlt"));
         }
-        catch (OperationCanceledException)
-        {
-            ShowResult(false, "Abgebrochen", "Du hast die Anfrage abgebrochen.");
-        }
-        catch (Exception ex)
-        {
-            ShowResult(false, "Es hat nicht geklappt", ex.Message);
-        }
+        catch { StatusInfo.Children.Add(InfoRow("Dienst", "nicht erreichbar")); }
     }
 
-    private static string TitleFor(ElevationResponse resp) => resp.Decision switch
+    private static UIElement InfoRow(string label, string value)
     {
-        "Timeout" => "Keine Antwort",
-        "HomeAssistant" => "Abgelehnt",
-        "IntegrityCheck" => "Sicherheitsprüfung",
-        _ => "Nicht erlaubt",
-    };
-
-    private void ShowWaiting(AppInfo app)
-    {
-        OverlayIcon.Text = app.AutoApprove ? "🚀" : "⏳";
-        OverlayTitle.Text = app.AutoApprove ? $"{app.Name} wird gestartet…" : "Warte auf Freigabe von Papa…";
-        OverlayText.Text = app.AutoApprove ? "" : "Du bekommst gleich Bescheid. Das kann bis zu 2 Minuten dauern.";
-        OverlayBar.Visibility = Visibility.Visible;
-        OverlayClose.Visibility = Visibility.Collapsed;
-        OverlayCancel.Visibility = app.AutoApprove ? Visibility.Collapsed : Visibility.Visible;
-        Overlay.Visibility = Visibility.Visible;
+        var g = new Grid { Margin = new Thickness(0, 4, 0, 4) };
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
+        g.ColumnDefinitions.Add(new ColumnDefinition());
+        var l = new TextBlock { Text = label, Foreground = new SolidColorBrush(Color.FromRgb(0x8A,0x93,0xA1)), FontSize = 13 };
+        var v = new TextBlock { Text = value, Foreground = new SolidColorBrush(Color.FromRgb(0xE6,0xE9,0xEE)), FontSize = 13, TextWrapping = TextWrapping.Wrap };
+        Grid.SetColumn(v, 1);
+        g.Children.Add(l); g.Children.Add(v);
+        return g;
     }
 
-    private void ShowResult(bool ok, string title, string text)
-    {
-        OverlayIcon.Text = ok ? "✅" : "🚫";
-        OverlayTitle.Text = title;
-        OverlayText.Text = text;
-        OverlayBar.Visibility = Visibility.Collapsed;
-        OverlayCancel.Visibility = Visibility.Collapsed;
-        OverlayClose.Visibility = Visibility.Visible;
-        Overlay.Visibility = Visibility.Visible;
-    }
-
-    private void OverlayClose_Click(object sender, RoutedEventArgs e)
-    {
-        Overlay.Visibility = Visibility.Collapsed;
-    }
-
-    private void OverlayCancel_Click(object sender, RoutedEventArgs e)
-    {
-        _cts?.Cancel();
-    }
-
-    private void TitleBar_Drag(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed) DragMove();
-    }
-
-    private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-
-    private void CloseWindow_Click(object sender, RoutedEventArgs e) => Close(); // geht ins Tray
-
+    // ---------- Update ----------
     private async void Update_Click(object sender, RoutedEventArgs e)
     {
-        var current = System.Reflection.Assembly.GetExecutingAssembly()
-            .GetName().Version?.ToString(3) ?? "1.0.0";
-
-        OverlayIcon.Text = "🔄";
-        OverlayTitle.Text = "Suche nach Updates…";
-        OverlayText.Text = $"Aktuelle Version: {current}";
-        OverlayBar.Visibility = Visibility.Visible;
-        OverlayClose.Visibility = Visibility.Collapsed;
-        Overlay.Visibility = Visibility.Visible;
-
+        var current = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0";
+        ShowOverlay("🔄", "Suche nach Updates…", $"Aktuelle Version: {current}", waiting: true);
         var info = await Updater.CheckAsync(current);
         if (!info.Available)
         {
-            ShowResult(true, "Alles aktuell",
-                string.IsNullOrEmpty(info.LatestVersion)
-                    ? "Es wurde keine neuere Version gefunden."
-                    : $"Neueste Version: {info.LatestVersion} – du hast schon die aktuelle.");
+            ShowOverlay("✅", "Alles aktuell",
+                string.IsNullOrEmpty(info.LatestVersion) ? "Keine neuere Version gefunden."
+                    : $"Neueste Version: {info.LatestVersion}.", waiting: false);
             return;
         }
-
-        // Update gefunden – herunterladen und einspielen.
-        OverlayIcon.Text = "⬇️";
-        OverlayTitle.Text = $"Update {info.LatestVersion} wird geladen…";
-        OverlayText.Text = info.Notes ?? "";
-        OverlayBar.Visibility = Visibility.Visible;
-        OverlayClose.Visibility = Visibility.Collapsed;
-
+        ShowOverlay("⬇️", $"Update {info.LatestVersion} wird geladen…", info.Notes ?? "", waiting: true);
         try
         {
-            var dir = Path.Combine(Path.GetTempPath(), "RunAsAdminUpdate");
+            var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "RunAsAdminUpdate");
             var zip = await Updater.DownloadAsync(info.DownloadUrl!, dir);
             var resp = await PipeClient.ApplyUpdateAsync(zip);
             var ok = resp.State == RequestState.Approved;
-            ShowResult(ok, ok ? "Update wird eingespielt" : "Update fehlgeschlagen",
-                ok ? "Das Programm startet gleich neu. Du kannst dieses Fenster schließen."
-                   : resp.Message);
+            ShowOverlay(ok ? "✅" : "🚫", ok ? "Update wird eingespielt" : "Fehlgeschlagen",
+                ok ? "Das Programm startet gleich neu." : resp.Message, waiting: false);
         }
-        catch (Exception ex)
-        {
-            ShowResult(false, "Update fehlgeschlagen", ex.Message);
-        }
+        catch (Exception ex) { ShowOverlay("🚫", "Update fehlgeschlagen", ex.Message, waiting: false); }
     }
-}
 
-/// <summary>Button mit zusätzlichem Hinweistext (für das Kachel-Template).</summary>
-public sealed class TileButton : System.Windows.Controls.Button
-{
-    public static readonly DependencyProperty HintProperty =
-        DependencyProperty.Register(nameof(Hint), typeof(string), typeof(TileButton),
-            new PropertyMetadata(""));
-
-    public static readonly DependencyProperty GlyphProperty =
-        DependencyProperty.Register(nameof(Glyph), typeof(string), typeof(TileButton),
-            new PropertyMetadata(""));
-
-    /// <summary>0 = sofort (grün), 1 = Freigabe nötig (blau), 2 = nicht installiert (grau).</summary>
-    public static readonly DependencyProperty TileKindProperty =
-        DependencyProperty.Register(nameof(TileKind), typeof(int), typeof(TileButton),
-            new PropertyMetadata(0));
-
-    public string Hint
+    // ---------- Overlay-Helfer ----------
+    private void ShowOverlay(string icon, string title, string text, bool waiting, bool cancelable = false)
     {
-        get => (string)GetValue(HintProperty);
-        set => SetValue(HintProperty, value);
+        OverlayIcon.Text = icon;
+        OverlayTitle.Text = title;
+        OverlayText.Text = text;
+        OverlayBar.Visibility = waiting ? Visibility.Visible : Visibility.Collapsed;
+        OverlayCancel.Visibility = (waiting && cancelable) ? Visibility.Visible : Visibility.Collapsed;
+        OverlayClose.Visibility = waiting ? Visibility.Collapsed : Visibility.Visible;
+        Overlay.Visibility = Visibility.Visible;
     }
 
-    public string Glyph
-    {
-        get => (string)GetValue(GlyphProperty);
-        set => SetValue(GlyphProperty, value);
-    }
+    private void OverlayClose_Click(object sender, RoutedEventArgs e) => Overlay.Visibility = Visibility.Collapsed;
+    private void OverlayCancel_Click(object sender, RoutedEventArgs e) => _cts?.Cancel();
 
-    public int TileKind
-    {
-        get => (int)GetValue(TileKindProperty);
-        set => SetValue(TileKindProperty, value);
-    }
+    // ---------- Fenster ----------
+    private void TitleBar_Drag(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    { if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed) DragMove(); }
+    private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+    private void CloseWindow_Click(object sender, RoutedEventArgs e) => Close();
 }

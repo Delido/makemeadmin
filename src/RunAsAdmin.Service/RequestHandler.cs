@@ -301,6 +301,52 @@ public sealed class RequestHandler
         return null;
     }
 
+    /// <summary>Verlauf der letzten relevanten Ereignisse aus dem Audit-Log.</summary>
+    public HistoryResponse History(int max = 30)
+    {
+        var resp = new HistoryResponse();
+        try
+        {
+            var file = Path.Combine(_cfg.LogDirectory, $"audit-{DateTime.Now:yyyy-MM-dd}.jsonl");
+            if (!File.Exists(file)) return resp;
+            var lines = File.ReadLines(file).ToArray();
+            foreach (var line in lines.Reverse())
+            {
+                if (resp.Items.Count >= max) break;
+                var item = ParseHistory(line);
+                if (item is not null) resp.Items.Add(item);
+            }
+        }
+        catch { }
+        return resp;
+    }
+
+    private static HistoryItem? ParseHistory(string json)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var ev = root.GetProperty("event").GetString() ?? "";
+            var ts = root.TryGetProperty("ts", out var t) ? t.GetString() ?? "" : "";
+            var time = DateTimeOffset.TryParse(ts, out var dto) ? dto.ToString("HH:mm") : "";
+            var data = root.TryGetProperty("data", out var d) ? d : default;
+            string? name = data.ValueKind == System.Text.Json.JsonValueKind.Object
+                && data.TryGetProperty("Name", out var n) ? n.GetString() : null;
+
+            return ev switch
+            {
+                "timeadmin.granted" => new HistoryItem { Time = time, Kind = "grant", Text = "Adminrechte freigegeben (15 Min)" },
+                "timeadmin.revoked" => new HistoryItem { Time = time, Kind = "info", Text = "Adminrechte abgelaufen" },
+                "timeadmin.denied" => new HistoryItem { Time = time, Kind = "deny", Text = "Adminrechte abgelehnt" },
+                "request.denied" => new HistoryItem { Time = time, Kind = "deny", Text = $"Abgelehnt: {name}" },
+                "launch.success" => new HistoryItem { Time = time, Kind = "grant", Text = $"Gestartet: {name}" },
+                _ => null,
+            };
+        }
+        catch { return null; }
+    }
+
     /// <summary>PIN-Status (ist schon eine Eltern-PIN gesetzt?).</summary>
     public SettingsResponse PinStatus() => new()
     {

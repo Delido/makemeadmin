@@ -115,6 +115,10 @@ public sealed class PipeServer
             {
                 responseObject = _handler.PinStatus();
             }
+            else if (msg.Verb == PipeVerb.History)
+            {
+                responseObject = _handler.History();
+            }
             else if (msg.Verb == PipeVerb.GetSettings)
             {
                 responseObject = _handler.GetSettings();
