@@ -67,7 +67,10 @@ public sealed class PipeMessage
 /// <summary>Einstellungen, die die GUI anzeigt/speichert. Enthält nie das Secret im Klartext beim Lesen.</summary>
 public sealed class SettingsPayload
 {
-    // Eingabe/Anzeige
+    /// <summary>Freigabe-Modus: "HomeAssistant" oder "Server".</summary>
+    public ApprovalMode Mode { get; set; } = ApprovalMode.HomeAssistant;
+
+    // --- Home-Assistant-Modus (Webhooks) ---
     public string BaseUrl { get; set; } = "";
     public string RequestWebhookId { get; set; } = "runasadmin_request";
     public string EventWebhookId { get; set; } = "runasadmin_event";
@@ -75,14 +78,22 @@ public sealed class SettingsPayload
     public bool Enabled { get; set; }
     public bool ReportEvents { get; set; } = true;
 
-    /// <summary>true, wenn ein Secret gesetzt ist (ohne es preiszugeben).</summary>
+    /// <summary>true, wenn ein HA-Secret gesetzt ist (ohne es preiszugeben).</summary>
     public bool SecretIsSet { get; set; }
+
+    // --- Server-Modus (HA-Add-on) ---
+    /// <summary>Basis-URL des Add-ons, z. B. http://192.168.178.10:8099</summary>
+    public string ServerBaseUrl { get; set; } = "";
+    /// <summary>true, wenn ein Server-Token gesetzt ist (ohne es preiszugeben).</summary>
+    public bool ServerTokenIsSet { get; set; }
 
     // --- Nur beim Speichern gesetzt ---
     /// <summary>PIN zur Autorisierung des Speicherns (Pflicht, außer beim ersten Setzen).</summary>
     public string? Pin { get; set; }
-    /// <summary>Neues Secret im Klartext; null = unverändert lassen.</summary>
+    /// <summary>Neues HA-Secret im Klartext; null = unverändert lassen.</summary>
     public string? NewSecret { get; set; }
+    /// <summary>Neues Server-Token im Klartext; null = unverändert lassen.</summary>
+    public string? NewServerToken { get; set; }
     /// <summary>Neue PIN setzen/ändern; null = unverändert.</summary>
     public string? NewPin { get; set; }
 }

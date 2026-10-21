@@ -56,6 +56,26 @@
     {% endif %}
   </div>
 
+  <div class="card">
+    <h2>Aktive Admin-Zeiten</h2>
+    {% if active %}
+      {% for s in active %}
+      <div class="req">
+        <div>
+          <div class="who">{{ s.user }} an {{ s.computer }}</div>
+          <div class="meta">seit {{ s.started | fmt_ts }} · Admin aktiv</div>
+        </div>
+        <form method="post" action="cancel" onsubmit="return confirm('Not-Aus: Adminrechte auf {{ s.computer }} sofort entziehen?');">
+          <input type="hidden" name="computer" value="{{ s.computer }}">
+          <button class="deny" name="notaus" value="1">Not-Aus</button>
+        </form>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="muted">Gerade niemand mit aktiven Adminrechten.</div>
+    {% endif %}
+  </div>
+
   <div class="grid">
     <div class="card">
       <h2>Admin-Zeiten pro Tag</h2>

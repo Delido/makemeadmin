@@ -27,6 +27,9 @@ public partial class SettingsWindow : Window
         _pinIsSet = resp.PinIsSet;
         var s = resp.Settings ?? new SettingsPayload();
 
+        ModeHa.IsChecked = s.Mode == ApprovalMode.HomeAssistant;
+        ModeServer.IsChecked = s.Mode == ApprovalMode.Server;
+
         BaseUrl.Text = s.BaseUrl;
         Enabled.IsChecked = s.Enabled;
         ReqWebhook.Text = s.RequestWebhookId;
@@ -35,6 +38,13 @@ public partial class SettingsWindow : Window
         SecretHint.Text = s.SecretIsSet
             ? "Ein Geheimnis ist gesetzt. Feld leer lassen = unveraendert."
             : "Noch kein Geheimnis gesetzt.";
+
+        ServerUrl.Text = s.ServerBaseUrl;
+        ServerTokenHint.Text = s.ServerTokenIsSet
+            ? "Ein Token ist gesetzt. Feld leer lassen = unveraendert."
+            : "Noch kein Token gesetzt.";
+
+        UpdateModeVisibility();
 
         if (_pinIsSet)
         {
@@ -50,9 +60,23 @@ public partial class SettingsWindow : Window
         }
     }
 
+    /// <summary>Blendet je nach gewähltem Modus die passende Feldgruppe ein.</summary>
+    private void UpdateModeVisibility()
+    {
+        var server = ModeServer.IsChecked == true;
+        HaGroup.Visibility = server ? Visibility.Collapsed : Visibility.Visible;
+        ServerGroup.Visibility = server ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void Mode_Changed(object sender, RoutedEventArgs e) => UpdateModeVisibility();
+
     private async void Save_Click(object sender, RoutedEventArgs e)
     {
-        if (!int.TryParse(Port.Text.Trim(), out var port) || port <= 0)
+        var server = ModeServer.IsChecked == true;
+
+        // Port nur im HA-Modus relevant; im Server-Modus unveraendert durchreichen.
+        int port = 0;
+        if (!server && (!int.TryParse(Port.Text.Trim(), out port) || port <= 0))
         {
             Status.Text = "Port ungueltig.";
             return;
@@ -60,15 +84,18 @@ public partial class SettingsWindow : Window
 
         var payload = new SettingsPayload
         {
+            Mode = server ? ApprovalMode.Server : ApprovalMode.HomeAssistant,
             BaseUrl = BaseUrl.Text.Trim(),
             Enabled = Enabled.IsChecked == true,
             RequestWebhookId = ReqWebhook.Text.Trim(),
             EventWebhookId = EvtWebhook.Text.Trim(),
             CallbackPort = port,
             ReportEvents = true,
+            ServerBaseUrl = ServerUrl.Text.Trim(),
             Pin = _pinIsSet ? CurrentPin.Password : null,
             NewPin = string.IsNullOrEmpty(NewPin.Password) ? null : NewPin.Password,
             NewSecret = string.IsNullOrEmpty(SecretBox.Password) ? null : SecretBox.Password,
+            NewServerToken = string.IsNullOrEmpty(ServerTokenBox.Password) ? null : ServerTokenBox.Password,
         };
 
         SaveBtn.IsEnabled = false;

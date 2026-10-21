@@ -11,7 +11,7 @@ namespace RunAsAdmin.Service.Approval;
 /// Entscheidung, die Home Assistant an einen lokalen HTTP-Listener zurückschickt.
 /// Der Rückkanal ist mit einem gemeinsamen Secret pro Anfrage abgesichert.
 /// </summary>
-public sealed class HomeAssistantApprover : IAsyncDisposable
+public sealed class HomeAssistantApprover : IApprover
 {
     private readonly HomeAssistantConfig _cfg;
     private readonly AuditLog _log;

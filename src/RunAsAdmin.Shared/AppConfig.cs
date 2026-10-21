@@ -12,8 +12,16 @@ public sealed class AppConfig
     /// <summary>Freigegebene Programme, die der Dienst erhöht starten darf.</summary>
     public List<AllowedApp> AllowedApps { get; set; } = new();
 
+    /// <summary>
+    /// Freigabe-Modus: HomeAssistant (Webhooks, Rückkanal) oder Server (HA-Add-on mit Polling).
+    /// </summary>
+    public ApprovalMode Mode { get; set; } = ApprovalMode.HomeAssistant;
+
     /// <summary>Anbindung an Home Assistant für die Freigabe unbekannter Programme.</summary>
     public HomeAssistantConfig HomeAssistant { get; set; } = new();
+
+    /// <summary>Anbindung an das RunAsAdmin-Server-Add-on (Modus „Server").</summary>
+    public ServerConfig Server { get; set; } = new();
 
     /// <summary>Verzeichnis für die Protokolldateien.</summary>
     public string LogDirectory { get; set; } = @"C:\ProgramData\RunAsAdmin\logs";
@@ -166,4 +174,43 @@ public sealed class HomeAssistantConfig
 
     /// <summary>Setzt das Secret (verschlüsselt es sofort).</summary>
     public void SetSecret(string plain) => CallbackSecretEnc = Secret.Protect(plain);
+}
+
+/// <summary>Wie die Freigabe eingeholt wird.</summary>
+public enum ApprovalMode
+{
+    /// <summary>Direkt per Home-Assistant-Webhooks mit lokalem Rückkanal-Listener.</summary>
+    HomeAssistant,
+
+    /// <summary>Über das RunAsAdmin-Server-Add-on: Anfrage senden, Entscheidung pollen.</summary>
+    Server,
+}
+
+/// <summary>
+/// Anbindung an das RunAsAdmin-Server-Add-on (FastAPI). Der Dienst schickt die
+/// Anfrage an das Add-on und pollt die Entscheidung – kein offener Port am PC nötig.
+/// </summary>
+public sealed class ServerConfig
+{
+    /// <summary>Basis-URL des Add-ons, z. B. http://192.168.178.10:8099 (ohne Slash am Ende).</summary>
+    public string BaseUrl { get; set; } = "";
+
+    /// <summary>
+    /// Gemeinsames Token (muss der Add-on-Option <c>pc_token</c> entsprechen) –
+    /// DPAPI-verschlüsselt gespeichert. Zugriff über <see cref="Token"/>.
+    /// </summary>
+    public string? TokenEnc { get; set; }
+
+    /// <summary>Protokoll-Ereignisse zusätzlich an das Add-on melden (Dashboard/Verlauf).</summary>
+    public bool ReportEvents { get; set; } = true;
+
+    /// <summary>Abstand zwischen zwei Status-Abfragen während des Wartens (Sekunden).</summary>
+    public int PollSeconds { get; set; } = 2;
+
+    /// <summary>Entschlüsseltes Token (leer, wenn nicht gesetzt). Nicht serialisiert.</summary>
+    [JsonIgnore]
+    public string Token => Secret.Unprotect(TokenEnc);
+
+    /// <summary>Setzt das Token (verschlüsselt es sofort).</summary>
+    public void SetToken(string plain) => TokenEnc = Secret.Protect(plain);
 }

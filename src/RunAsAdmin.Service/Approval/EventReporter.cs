@@ -1,16 +1,17 @@
 using System.Net.Http.Json;
+using System.Text;
 using RunAsAdmin.Shared;
 
 namespace RunAsAdmin.Service.Approval;
 
 /// <summary>
-/// Meldet ausgewählte Protokoll-Ereignisse an Home Assistant (Webhook), damit
-/// sie dort im Logbuch erscheinen und für Statistik/Dashboard nutzbar sind.
+/// Meldet ausgewählte Protokoll-Ereignisse nach außen (Logbuch/Dashboard), je nach
+/// Modus an den Home-Assistant-Webhook oder an das RunAsAdmin-Server-Add-on.
 /// Feuert nur für relevante Ereignisse, nicht für jede interne Kleinigkeit.
 /// </summary>
 public sealed class EventReporter : IDisposable
 {
-    // An HA nur Zusammenfassungen. Die vollständige Prozessliste während einer
+    // An HA/Server nur Zusammenfassungen. Die vollständige Prozessliste während einer
     // Admin-Zeit (timeadmin.process) bleibt bewusst lokal/fälschungssicher.
     private static readonly HashSet<string> Relevant = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -22,13 +23,28 @@ public sealed class EventReporter : IDisposable
     };
 
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(8) };
-    private readonly string _url;
+    private readonly ApprovalMode _mode;
     private readonly bool _enabled;
+    private readonly string _url;
+    private readonly string _token;
 
-    public EventReporter(HomeAssistantConfig cfg)
+    public EventReporter(AppConfig cfg)
     {
-        _enabled = cfg.Enabled && cfg.ReportEvents && !string.IsNullOrWhiteSpace(cfg.BaseUrl);
-        _url = $"{cfg.BaseUrl.TrimEnd('/')}/api/webhook/{cfg.EventWebhookId}";
+        _mode = cfg.Mode;
+        if (_mode == ApprovalMode.Server)
+        {
+            var s = cfg.Server;
+            _enabled = s.ReportEvents && !string.IsNullOrWhiteSpace(s.BaseUrl);
+            _url = $"{s.BaseUrl.TrimEnd('/')}/api/event";
+            _token = s.Token;
+        }
+        else
+        {
+            var ha = cfg.HomeAssistant;
+            _enabled = ha.Enabled && ha.ReportEvents && !string.IsNullOrWhiteSpace(ha.BaseUrl);
+            _url = $"{ha.BaseUrl.TrimEnd('/')}/api/webhook/{ha.EventWebhookId}";
+            _token = "";
+        }
     }
 
     public void Report(string eventType, object data)
@@ -39,16 +55,47 @@ public sealed class EventReporter : IDisposable
         {
             try
             {
-                await _http.PostAsJsonAsync(_url, new
-                {
-                    computer = Environment.MachineName,
-                    @event = eventType,
-                    ts = DateTimeOffset.Now.ToString("o"),
-                    data,
-                });
+                if (_mode == ApprovalMode.Server)
+                    await PostServerAsync(eventType, data);
+                else
+                    await _http.PostAsJsonAsync(_url, new
+                    {
+                        computer = Environment.MachineName,
+                        @event = eventType,
+                        ts = DateTimeOffset.Now.ToString("o"),
+                        data,
+                    });
             }
-            catch { /* HA evtl. offline – egal, lokal ist alles protokolliert */ }
+            catch { /* HA/Server evtl. offline – egal, lokal ist alles protokolliert */ }
         });
+    }
+
+    /// <summary>Meldet ein Ereignis an das Add-on (PascalCase, mit Token).</summary>
+    private async Task PostServerAsync(string eventType, object data)
+    {
+        // Zusatzfelder, die das Add-on für Sitzungen/Statistik nutzt (User, Apps).
+        string user = TryGet(data, "user") ?? TryGet(data, "requestingUser") ?? "";
+        string apps = TryGet(data, "apps") ?? "";
+        var body = new
+        {
+            Token = _token,
+            Computer = Environment.MachineName,
+            Type = eventType,
+            Detail = AppConfig.SerializeCompact(data),
+            User = user,
+            Apps = apps,
+        };
+        using var content = new StringContent(AppConfig.SerializeCompact(body),
+            Encoding.UTF8, "application/json");
+        await _http.PostAsync(_url, content);
+    }
+
+    /// <summary>Liest ein Feld (case-insensitiv) aus einem anonymen Objekt, falls vorhanden.</summary>
+    private static string? TryGet(object data, string name)
+    {
+        var p = data.GetType().GetProperties()
+            .FirstOrDefault(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
+        return p?.GetValue(data)?.ToString();
     }
 
     public void Dispose() => _http.Dispose();

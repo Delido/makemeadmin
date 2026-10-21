@@ -36,6 +36,10 @@ CREATE TABLE IF NOT EXISTS events (
     type TEXT,
     detail TEXT
 );
+CREATE TABLE IF NOT EXISTS cancels (
+    computer TEXT PRIMARY KEY,   -- offener Not-Aus; vom PC beim Pollen abgeholt
+    requested INTEGER
+);
 """
 
 
@@ -125,6 +129,37 @@ def end_session(computer, apps):
                 "UPDATE sessions SET ended=?, apps=? WHERE id=?",
                 (int(time.time()), apps, row["id"]),
             )
+
+
+def request_cancel(computer):
+    """Setzt einen Not-Aus fuer einen PC (vom Dashboard ausgeloest)."""
+    with conn() as c:
+        c.execute(
+            "INSERT INTO cancels(computer,requested) VALUES(?,?) "
+            "ON CONFLICT(computer) DO UPDATE SET requested=excluded.requested",
+            (computer, int(time.time())),
+        )
+
+
+def take_cancel(computer):
+    """Holt einen offenen Not-Aus ab und loescht ihn (einmalig). True = es lag einer vor."""
+    with conn() as c:
+        row = c.execute(
+            "SELECT computer FROM cancels WHERE computer=?", (computer,)
+        ).fetchone()
+        if row:
+            c.execute("DELETE FROM cancels WHERE computer=?", (computer,))
+            return True
+    return False
+
+
+def active_sessions():
+    """Laufende Admin-Zeiten (noch nicht beendet) fuer die Dashboard-Anzeige."""
+    with conn() as c:
+        rows = c.execute(
+            "SELECT * FROM sessions WHERE ended IS NULL ORDER BY started DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def recent_events(limit=100):

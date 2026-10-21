@@ -15,14 +15,22 @@ public sealed class RequestHandler
 {
     private readonly AppConfig _cfg;
     private readonly AuditLog _log;
-    private readonly HomeAssistantApprover _approver;
+    private readonly IApprover _approver;
     private readonly Elevator _elevator = new();
     private readonly TimeAdminManager _timeAdmin;
 
     /// <summary>Feste Dauer der Admin-Zeit (laut Vorgabe 15 Minuten).</summary>
     public const int TimeAdminMinutes = 15;
 
-    public RequestHandler(AppConfig cfg, AuditLog log, HomeAssistantApprover approver,
+    /// <summary>Ist der aktive Freigabe-Weg (HA-Webhook oder Server-Add-on) eingerichtet?</summary>
+    private bool ApprovalConfigured => _cfg.Mode == ApprovalMode.Server
+        ? !string.IsNullOrWhiteSpace(_cfg.Server.BaseUrl)
+        : _cfg.HomeAssistant.Enabled;
+
+    /// <summary>Name des aktiven Freigabe-Wegs fürs Protokoll/Entscheidungstext.</summary>
+    private string ApprovalSource => _cfg.Mode == ApprovalMode.Server ? "Server" : "HomeAssistant";
+
+    public RequestHandler(AppConfig cfg, AuditLog log, IApprover approver,
         TimeAdminManager timeAdmin)
     {
         _cfg = cfg;
@@ -98,11 +106,11 @@ public sealed class RequestHandler
     private async Task<TimeAdminResponse> GrantTimeInnerAsync(string requestId, string requestingUser,
         string? reason, CancellationToken ct)
     {
-        if (!_cfg.HomeAssistant.Enabled)
+        if (!ApprovalConfigured)
             return new TimeAdminResponse
             {
                 State = RequestState.Denied, Decision = "Policy",
-                Message = "Admin-Zeit braucht eine Freigabe, aber Home Assistant ist nicht eingerichtet.",
+                Message = "Admin-Zeit braucht eine Freigabe, aber die Anbindung (Home Assistant bzw. Server) ist nicht eingerichtet.",
             };
 
         _log.Write("timeadmin.requested", new { requestId, requestingUser, minutes = TimeAdminMinutes, reason });
@@ -121,7 +129,7 @@ public sealed class RequestHandler
 
         if (!result.Approved)
         {
-            var decision = result.DecidedBy == "timeout" ? "Timeout" : "HomeAssistant";
+            var decision = result.DecidedBy == "timeout" ? "Timeout" : ApprovalSource;
             _log.Write("timeadmin.denied", new { requestId, decision });
             return new TimeAdminResponse
             {
@@ -136,7 +144,7 @@ public sealed class RequestHandler
         return new TimeAdminResponse
         {
             State = ok ? RequestState.Approved : RequestState.Error,
-            Decision = "HomeAssistant",
+            Decision = ApprovalSource,
             Active = ok, RemainingSeconds = ok ? _timeAdmin.RemainingSeconds : 0,
             Message = msg,
         };
@@ -165,12 +173,12 @@ public sealed class RequestHandler
                     Message = "Programm ist nicht freigegeben. Bitte eine .exe auswählen oder vom Elternteil eintragen lassen.",
                 };
             }
-            if (!_cfg.HomeAssistant.Enabled)
+            if (!ApprovalConfigured)
             {
                 return new ElevationResponse
                 {
                     State = RequestState.Denied, Decision = "Policy",
-                    Message = "Neue Programme brauchen eine Freigabe, aber Home Assistant ist nicht eingerichtet.",
+                    Message = "Neue Programme brauchen eine Freigabe, aber die Anbindung (Home Assistant bzw. Server) ist nicht eingerichtet.",
                 };
             }
             isAdhoc = true;
@@ -212,7 +220,7 @@ public sealed class RequestHandler
             approved = true;
             decision = "Auto";
         }
-        else if (!_cfg.HomeAssistant.Enabled)
+        else if (!ApprovalConfigured)
         {
             approved = false;
             decision = "Policy";
@@ -234,7 +242,7 @@ public sealed class RequestHandler
             _log.Write("request.approval_returned", new { requestId, result.Approved, result.Persist, result.DecidedBy });
             approved = result.Approved;
             persist = result.Approved && result.Persist && isAdhoc;
-            decision = result.DecidedBy == "timeout" ? "Timeout" : "HomeAssistant";
+            decision = result.DecidedBy == "timeout" ? "Timeout" : ApprovalSource;
         }
 
         // "Immer erlauben": Programm dauerhaft eintragen (dieser Pfad, mit Hash abgesichert).
@@ -447,12 +455,14 @@ public sealed class RequestHandler
     public SettingsResponse GetSettings()
     {
         var ha = _cfg.HomeAssistant;
+        var sv = _cfg.Server;
         return new SettingsResponse
         {
             State = RequestState.Approved,
             PinIsSet = !string.IsNullOrEmpty(_cfg.ParentPinHash),
             Settings = new SettingsPayload
             {
+                Mode = _cfg.Mode,
                 BaseUrl = ha.BaseUrl,
                 RequestWebhookId = ha.RequestWebhookId,
                 EventWebhookId = ha.EventWebhookId,
@@ -460,6 +470,8 @@ public sealed class RequestHandler
                 Enabled = ha.Enabled,
                 ReportEvents = ha.ReportEvents,
                 SecretIsSet = !string.IsNullOrEmpty(ha.CallbackSecretEnc),
+                ServerBaseUrl = sv.BaseUrl,
+                ServerTokenIsSet = !string.IsNullOrEmpty(sv.TokenEnc),
             },
         };
     }
@@ -489,6 +501,8 @@ public sealed class RequestHandler
                     Message = "Bitte zuerst eine Eltern-PIN (mind. 4 Zeichen) festlegen." };
         }
 
+        _cfg.Mode = p.Mode;
+
         var ha = _cfg.HomeAssistant;
         ha.BaseUrl = (p.BaseUrl ?? "").TrimEnd('/');
         ha.RequestWebhookId = string.IsNullOrWhiteSpace(p.RequestWebhookId) ? ha.RequestWebhookId : p.RequestWebhookId;
@@ -497,13 +511,17 @@ public sealed class RequestHandler
         ha.Enabled = p.Enabled;
         ha.ReportEvents = p.ReportEvents;
 
+        var sv = _cfg.Server;
+        sv.BaseUrl = (p.ServerBaseUrl ?? "").TrimEnd('/');
+
         if (!string.IsNullOrEmpty(p.NewSecret)) ha.SetSecret(p.NewSecret);
+        if (!string.IsNullOrEmpty(p.NewServerToken)) sv.SetToken(p.NewServerToken);
         if (!string.IsNullOrEmpty(p.NewPin)) _cfg.ParentPinHash = Secret.HashPin(p.NewPin);
 
         try
         {
             if (!string.IsNullOrEmpty(_cfg.SourcePath)) _cfg.Save(_cfg.SourcePath);
-            _log.Write("settings.saved", new { requestingUser, ha.BaseUrl, ha.Enabled, secretSet = !string.IsNullOrEmpty(ha.CallbackSecretEnc) });
+            _log.Write("settings.saved", new { requestingUser, mode = _cfg.Mode.ToString(), ha.BaseUrl, ha.Enabled, serverUrl = sv.BaseUrl });
             return new SettingsResponse { State = RequestState.Approved, PinIsSet = true,
                 Message = "Einstellungen gespeichert." };
         }

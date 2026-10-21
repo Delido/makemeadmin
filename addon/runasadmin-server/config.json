@@ -1,6 +1,6 @@
 {
   "name": "RunAsAdmin Server",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "slug": "runasadmin_server",
   "description": "Zentrale Steuerung und Verlauf fuer RunAsAdmin auf den Kinder-PCs",
   "url": "https://github.com/Delido/makemeadmin",

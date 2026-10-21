@@ -1,7 +1,6 @@
 using System.Runtime.Versioning;
 using RunAsAdmin.Service.Approval;
 using RunAsAdmin.Service.Elevation;
-using RunAsAdmin.Service.Remote;
 using RunAsAdmin.Shared;
 
 namespace RunAsAdmin.Service;
@@ -34,8 +33,8 @@ public sealed class Worker : BackgroundService
 
         var log = new AuditLog(cfg.LogDirectory);
 
-        // Ausgewählte Ereignisse zusätzlich an Home Assistant melden (Logbuch/Statistik).
-        using var reporter = new EventReporter(cfg.HomeAssistant);
+        // Ausgewählte Ereignisse nach außen melden (HA-Logbuch bzw. Add-on-Dashboard).
+        using var reporter = new EventReporter(cfg);
         log.Sink = reporter.Report;
 
         log.Write("service.start", new { configPath = _configPath, apps = cfg.AllowedApps.Count });
@@ -43,18 +42,18 @@ public sealed class Worker : BackgroundService
         // Alte Protokolldateien aufräumen (älter als 90 Tage).
         TryRotateLogs(cfg.LogDirectory, keepDays: 90, log);
 
-        await using var approver = new HomeAssistantApprover(cfg.HomeAssistant, log);
+        // Freigabe-Weg je nach Modus: Server-Add-on (Polling) oder HA-Webhooks (Rückkanal).
+        await using IApprover approver = cfg.Mode == ApprovalMode.Server
+            ? new ServerApprover(cfg.Server, log)
+            : new HomeAssistantApprover(cfg.HomeAssistant, log);
         try { approver.Start(); }
         catch (Exception ex) { log.Write("service.ha_listener_failed", new { error = ex.Message }); }
+        log.Write("service.approval_mode", new { mode = cfg.Mode.ToString() });
 
         using var timeAdmin = new TimeAdminManager(log);
         approver.OnCancel = () => timeAdmin.Revoke("notaus");   // Not-Aus per Handy
         var handler = new RequestHandler(cfg, log, approver, timeAdmin);
         var pipe = new PipeServer(cfg, log, handler);
-
-        using var remote = new RemoteTriggerServer(handler, log, cfg.HomeAssistant);
-        try { remote.Start(); }
-        catch (Exception ex) { log.Write("service.remote_listener_failed", new { error = ex.Message }); }
 
         // Tray-GUI in der Benutzersitzung sicherstellen (z. B. nach Update-Neustart).
         TryEnsureTrayGui(log);

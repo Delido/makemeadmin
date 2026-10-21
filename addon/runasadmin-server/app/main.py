@@ -86,6 +86,16 @@ async def api_status(req: Request):
     return {"status": r["state"]}  # pending | allow | deny
 
 
+@app.post("/api/cancel-status")
+async def api_cancel_status(req: Request):
+    """Der PC-Dienst pollt, ob ein Not-Aus fuer ihn ansteht (einmalig abgeholt)."""
+    data = await req.json()
+    check_token(data.get("Token"))
+    computer = data.get("Computer", "?")
+    db.seen(computer)
+    return {"cancel": db.take_cancel(computer)}
+
+
 @app.post("/api/event")
 async def api_event(req: Request):
     data = await req.json()
@@ -108,6 +118,7 @@ async def api_event(req: Request):
 async def dashboard(request: Request):
     return render("dashboard.html",
         pending=db.pending_requests(),
+        active=db.active_sessions(),
         events=db.recent_events(60),
         per_day=db.sessions_per_day(),
         top_apps=db.top_apps(),
@@ -117,6 +128,13 @@ async def dashboard(request: Request):
 @app.post("/decide")
 async def decide(request_id: str = Form(...), action: str = Form(...)):
     db.decide(request_id, "allow" if action == "allow" else "deny", "dashboard")
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/cancel")
+async def cancel(computer: str = Form(...)):
+    """Not-Aus vom Dashboard: der betroffene PC beendet die Admin-Zeit beim naechsten Poll."""
+    db.request_cancel(computer)
     return RedirectResponse("/", status_code=303)
 
 

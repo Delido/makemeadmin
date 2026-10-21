@@ -43,22 +43,44 @@
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
             <StackPanel x:Name="Form">
-                <TextBlock Text="Home-Assistant-Adresse (z. B. https://dein-ha.example.com)"/>
-                <TextBox x:Name="BaseUrl"/>
+                <TextBlock Text="Verbindungsart" Foreground="White" FontSize="15" FontWeight="SemiBold" Margin="0,4,0,2"/>
+                <TextBlock Text="Wie werden Freigaben eingeholt?" Foreground="#8A909B" FontSize="12" Margin="0,0,0,6"/>
+                <RadioButton x:Name="ModeHa" GroupName="Mode" Content="Home Assistant (Webhooks, Freigabe per Handy)"
+                             Foreground="#C9CED8" Margin="0,2" Checked="Mode_Changed"/>
+                <RadioButton x:Name="ModeServer" GroupName="Mode" Content="Server (RunAsAdmin-Add-on in Home Assistant)"
+                             Foreground="#C9CED8" Margin="0,2" Checked="Mode_Changed"/>
 
-                <TextBlock Text="Verbindung aktiv (Freigaben per Handy)"/>
-                <CheckBox x:Name="Enabled" Content="Home Assistant verwenden" Foreground="#C9CED8" Margin="0,2,0,0"/>
+                <!-- ===== Home-Assistant-Modus ===== -->
+                <StackPanel x:Name="HaGroup">
+                    <Separator Margin="0,14,0,0" Background="#2A2D38"/>
+                    <TextBlock Text="Home-Assistant-Adresse (z. B. https://dein-ha.example.com)"/>
+                    <TextBox x:Name="BaseUrl"/>
 
-                <TextBlock Text="Geheimnis (CallbackSecret)"/>
-                <PasswordBox x:Name="SecretBox"/>
-                <TextBlock x:Name="SecretHint" Text="" Foreground="#6B7280" FontSize="11" Margin="0,2,0,0"/>
+                    <TextBlock Text="Verbindung aktiv (Freigaben per Handy)"/>
+                    <CheckBox x:Name="Enabled" Content="Home Assistant verwenden" Foreground="#C9CED8" Margin="0,2,0,0"/>
 
-                <TextBlock Text="Webhook-ID Anfragen"/>
-                <TextBox x:Name="ReqWebhook"/>
-                <TextBlock Text="Webhook-ID Ereignisse"/>
-                <TextBox x:Name="EvtWebhook"/>
-                <TextBlock Text="Rueckkanal-Port"/>
-                <TextBox x:Name="Port"/>
+                    <TextBlock Text="Geheimnis (CallbackSecret)"/>
+                    <PasswordBox x:Name="SecretBox"/>
+                    <TextBlock x:Name="SecretHint" Text="" Foreground="#6B7280" FontSize="11" Margin="0,2,0,0"/>
+
+                    <TextBlock Text="Webhook-ID Anfragen"/>
+                    <TextBox x:Name="ReqWebhook"/>
+                    <TextBlock Text="Webhook-ID Ereignisse"/>
+                    <TextBox x:Name="EvtWebhook"/>
+                    <TextBlock Text="Rueckkanal-Port"/>
+                    <TextBox x:Name="Port"/>
+                </StackPanel>
+
+                <!-- ===== Server-Modus (Add-on) ===== -->
+                <StackPanel x:Name="ServerGroup">
+                    <Separator Margin="0,14,0,0" Background="#2A2D38"/>
+                    <TextBlock Text="Add-on-Adresse (z. B. http://192.168.178.10:8099)"/>
+                    <TextBox x:Name="ServerUrl"/>
+
+                    <TextBlock Text="Server-Token (muss der Add-on-Option 'pc_token' entsprechen)"/>
+                    <PasswordBox x:Name="ServerTokenBox"/>
+                    <TextBlock x:Name="ServerTokenHint" Text="" Foreground="#6B7280" FontSize="11" Margin="0,2,0,0"/>
+                </StackPanel>
 
                 <Separator Margin="0,18,0,0" Background="#2A2D38"/>
                 <TextBlock Text="Eltern-PIN" Foreground="White" FontSize="15" FontWeight="SemiBold" Margin="0,14,0,2"/>
