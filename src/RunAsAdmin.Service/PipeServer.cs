@@ -99,6 +99,12 @@ public sealed class PipeServer
             }
             catch (Exception ex) { _log.Write("pipe.impersonate_failed", new { error = ex.Message }); }
 
+            // WICHTIG: Nach der Impersonation (RunAsClient) sicher wieder als SYSTEM
+            // weiterarbeiten. Bliebe ein Impersonations-Rest des Kindes aktiv, liefe
+            // z. B. der Update-Download als Standardbenutzer -> "Access denied" beim
+            // Schreiben in den gehärteten ProgramData-Ordner.
+            try { RunAsAdmin.Service.Native.Win32.RevertToSelf(); } catch { }
+
             var msg = json is null ? null : AppConfig.Deserialize<PipeMessage>(json);
 
             object responseObject;
@@ -131,7 +137,14 @@ public sealed class PipeServer
                 // Sicherheit: der Dienst lädt + prüft das Update SELBST von GitHub.
                 // Ein vom Client mitgeschicktes ZIP wird bewusst ignoriert.
                 _log.Write("update.requested", new { by = user });
-                responseObject = UpdateApplier.CheckAndApply(_log);
+                // Auf einem FRISCHEN Thread ausführen: der trägt garantiert das
+                // SYSTEM-Token des Dienstes (kein Impersonations-Rest des Kindes),
+                // sonst scheitert der Download-Schreibvorgang mit "Access denied".
+                ElevationResponse upd = null!;
+                var t = new Thread(() => upd = UpdateApplier.CheckAndApply(_log)) { IsBackground = true };
+                t.Start();
+                t.Join();
+                responseObject = upd;
             }
             else if (msg.Verb == PipeVerb.PinStatus)
             {

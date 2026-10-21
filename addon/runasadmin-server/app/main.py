@@ -147,7 +147,14 @@ async def dashboard(request: Request):
 
 @app.post("/decide")
 async def decide(request_id: str = Form(...), action: str = Form(...)):
-    db.decide(request_id, "allow" if action == "allow" else "deny", "dashboard")
+    # allow_always = dauerhaft erlauben (Client traegt das Programm dann fest ein).
+    if action == "allow_always":
+        state = "allow_always"
+    elif action == "allow":
+        state = "allow"
+    else:
+        state = "deny"
+    db.decide(request_id, state, "dashboard")
     return RedirectResponse("/", status_code=303)
 
 

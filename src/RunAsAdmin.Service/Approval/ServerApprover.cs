@@ -82,10 +82,11 @@ public sealed class ServerApprover : IApprover
                 continue;   // vorübergehender Fehler – weiter versuchen bis zum Timeout
             }
 
-            if (status is "allow")
+            if (status is "allow" or "allow_always")
             {
-                _log.Write("decision.received", new { ok = true, ask.RequestId, Approved = true, via = "server" });
-                return new ApprovalDecision { RequestId = ask.RequestId, Approved = true, DecidedBy = "server" };
+                var persist = status == "allow_always";
+                _log.Write("decision.received", new { ok = true, ask.RequestId, Approved = true, persist, via = "server" });
+                return new ApprovalDecision { RequestId = ask.RequestId, Approved = true, Persist = persist, DecidedBy = "server" };
             }
             if (status is "deny")
             {

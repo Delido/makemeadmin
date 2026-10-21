@@ -62,11 +62,20 @@ public static class Updater
         CancellationToken ct = default)
     {
         Directory.CreateDirectory(targetDir);
-        var dest = Path.Combine(targetDir, AssetName);
+        // Bewusst NEUTRALER Dateiname/Endung (.bin) und ein zufälliger Name: manche
+        // Schutzrichtlinien/Scanner blockieren das Erstellen heruntergeladener
+        // ".zip"-Dateien ("Access denied"). Als .bin lädt es durch; die Endung ist
+        // fürs Entpacken egal (ZipFile liest den Inhalt, nicht die Endung).
+        var dest = Path.Combine(targetDir, "upd_" + Guid.NewGuid().ToString("N") + ".bin");
         using var http = CreateClient();
         await using var s = await http.GetStreamAsync(downloadUrl, ct);
-        await using var f = File.Create(dest);
-        await s.CopyToAsync(f, ct);
+        // Explizit CreateNew im exklusiven Modus – klare Fehlermeldung statt
+        // Überschreib-/Share-Konflikten mit Scannern.
+        await using (var f = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            await s.CopyToAsync(f, ct);
+            await f.FlushAsync(ct);
+        }
         return dest;
     }
 
