@@ -1,0 +1,59 @@
+# RunAsAdmin – Dashboard fuer Home Assistant
+# ==================================================================
+# So einrichten:
+#  1. In HA: Einstellungen -> Dashboards -> "Dashboard hinzufuegen"
+#     -> "Neues Dashboard von Grund auf" -> Name "RunAsAdmin".
+#  2. Das neue Dashboard oeffnen -> oben rechts Stift (Bearbeiten)
+#     -> die drei Punkte -> "Raw-Konfigurationseditor".
+#  3. Alles loeschen und DIESEN Inhalt einfuegen -> Speichern.
+#
+# Voraussetzung: die Helfer/Counter aus configuration.snippet.yaml existieren
+# (input_text.runasadmin_lastevent, counter.runasadmin_grants/_timeadmin) und
+# die Automation "RunAsAdmin – Ereignis protokollieren" laeuft.
+
+title: RunAsAdmin
+views:
+  - title: Übersicht
+    path: uebersicht
+    icon: mdi:shield-account
+    cards:
+      - type: markdown
+        content: >
+          ## 🛡️ RunAsAdmin – Kinder-PCs
+
+          Übersicht über Admin-Anfragen und was während der Admin-Zeit genutzt wurde.
+
+      # Letztes Ereignis gross
+      - type: entity
+        entity: input_text.runasadmin_lastevent
+        name: Letztes Ereignis
+        icon: mdi:history
+
+      # Statistik-Kacheln
+      - type: horizontal-stack
+        cards:
+          - type: entity
+            entity: counter.runasadmin_timeadmin
+            name: Admin-Zeiten
+            icon: mdi:clock-alert
+          - type: entity
+            entity: counter.runasadmin_grants
+            name: Freigaben gesamt
+            icon: mdi:shield-check
+
+      # Verlauf: Logbuch gefiltert auf RunAsAdmin-Ereignisse
+      - type: logbook
+        title: Verlauf (wer / wann / was)
+        hours_to_show: 168   # 7 Tage
+        entities:
+          - input_text.runasadmin_lastevent
+
+      # Verlauf des letzten-Ereignis-Textes (zeigt die einzelnen Eintraege ueber Zeit)
+      - type: history-graph
+        title: Aktivität
+        hours_to_show: 72
+        entities:
+          - entity: counter.runasadmin_timeadmin
+            name: Admin-Zeiten
+          - entity: counter.runasadmin_grants
+            name: Freigaben

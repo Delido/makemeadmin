@@ -168,6 +168,16 @@ internal static partial class Win32
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool RevertToSelf();
 
+    // --- Elevation-Status eines Prozesses prüfen ---
+    internal const int PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+    internal const int TokenElevation = 20; // TOKEN_INFORMATION_CLASS
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    internal static partial IntPtr OpenProcess(int access, [MarshalAs(UnmanagedType.Bool)] bool inherit, int pid);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct TOKEN_ELEVATION { public int TokenIsElevated; }
+
     // --- Lokale Gruppen über native netapi32 (robust auch bei Microsoft-Konten) ---
     [StructLayout(LayoutKind.Sequential)]
     internal struct LOCALGROUP_MEMBERS_INFO_0 { public IntPtr lgrmi0_sid; }

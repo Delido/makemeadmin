@@ -98,7 +98,7 @@
           {%- elif e == 'timeadmin.granted' -%}
             {{ ev.computer }}: Admin-Zeit gestartet ({{ d.minutes }} Min) für {{ d.user }}
           {%- elif e == 'timeadmin.revoked' -%}
-            {{ ev.computer }}: Admin-Zeit beendet ({{ d.reason }}), {{ d.processesStarted }} Prozesse gestartet
+            {{ ev.computer }}: Admin-Zeit beendet{% if d.appsText %} – genutzt: {{ d.appsText }}{% else %} (keine Admin-Programme){% endif %}
           {%- else -%}
             {{ ev.computer }}: {{ e }}
           {%- endif -%}

@@ -47,6 +47,9 @@ public partial class App : System.Windows.Application
         // Admin-Status regelmäßig abfragen und Tray-Icon/Tooltip anpassen.
         StartStatusPolling();
 
+        // Stündlich im Hintergrund nach Updates suchen und still einspielen.
+        StartAutoUpdate();
+
         // Beim Start: nur ins Tray, wenn mit /tray gestartet (z. B. Autostart),
         // sonst Fenster direkt zeigen.
         if (!e.Args.Contains("/tray"))
@@ -76,6 +79,43 @@ public partial class App : System.Windows.Application
             }
         };
         _statusTimer.Start();
+    }
+
+    private System.Windows.Threading.DispatcherTimer? _updateTimer;
+
+    private void StartAutoUpdate()
+    {
+        // Erste Prüfung nach 2 Minuten (nach dem Start), danach stündlich.
+        _updateTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMinutes(2),
+        };
+        _updateTimer.Tick += async (_, _) =>
+        {
+            _updateTimer!.Interval = TimeSpan.FromHours(1); // ab jetzt stündlich
+            await CheckAndApplyUpdateAsync();
+        };
+        _updateTimer.Start();
+    }
+
+    private async Task CheckAndApplyUpdateAsync()
+    {
+        try
+        {
+            var current = System.Reflection.Assembly.GetExecutingAssembly()
+                .GetName().Version?.ToString(3) ?? "1.0.0";
+            var info = await RunAsAdmin.Shared.Updater.CheckAsync(current);
+            if (!info.Available || info.DownloadUrl is null) return;
+
+            // Keine Updates während einer aktiven Admin-Zeit einspielen (Dienst-Neustart).
+            try { if ((await RunAsAdmin.Shared.PipeClient.TimeStatusAsync()).Active) return; } catch { }
+
+            var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "RunAsAdminUpdate");
+            var zip = await RunAsAdmin.Shared.Updater.DownloadAsync(info.DownloadUrl, dir);
+            await RunAsAdmin.Shared.PipeClient.ApplyUpdateAsync(zip);
+            // Der Dienst spielt ein und startet Dienst + Tray-GUI neu.
+        }
+        catch { /* still – nächste Stunde erneut */ }
     }
 
     private void ShowSettings()

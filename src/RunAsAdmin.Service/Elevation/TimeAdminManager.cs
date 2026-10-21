@@ -27,6 +27,7 @@ public sealed class TimeAdminManager : IDisposable
     private Timer? _timer;
     private ManagementEventWatcher? _procWatcher;
     private int _processCount;
+    private readonly List<string> _elevatedNames = new();
 
     public TimeAdminManager(AuditLog log) => _log = log;
 
@@ -78,6 +79,7 @@ public sealed class TimeAdminManager : IDisposable
             _activeAccount = user.Value.Account;
             _expiresAt = DateTimeOffset.Now.AddMinutes(minutes);
             _processCount = 0;
+            _elevatedNames.Clear();
 
             _log.Write("timeadmin.granted", new
             {
@@ -102,9 +104,16 @@ public sealed class TimeAdminManager : IDisposable
             catch (Exception ex) { _log.Write("timeadmin.revoke_error", new { error = ex.Message }); }
 
             StopProcessWatch();
+            // Liste der Programme bereinigen (ohne .exe) für die HA-Zusammenfassung.
+            var apps = _elevatedNames
+                .Select(n => n.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? n[..^4] : n)
+                .Distinct().ToArray();
             _log.Write("timeadmin.revoked", new
             {
-                reason = why, account = _activeAccount, processesStarted = _processCount,
+                reason = why, account = _activeAccount,
+                processesStarted = _processCount,
+                apps,                               // Namen der erhöht gestarteten Programme
+                appsText = string.Join(", ", apps), // kompakt für HA-Logbuch
             });
 
             _timer?.Dispose(); _timer = null;
@@ -116,7 +125,6 @@ public sealed class TimeAdminManager : IDisposable
     {
         try
         {
-            // Alle Prozessstarts auf dem System; wir filtern grob und protokollieren.
             var query = new WqlEventQuery("SELECT * FROM Win32_ProcessStartTrace");
             _procWatcher = new ManagementEventWatcher(query);
             _procWatcher.EventArrived += (_, e) =>
@@ -124,9 +132,19 @@ public sealed class TimeAdminManager : IDisposable
                 try
                 {
                     var name = e.NewEvent.Properties["ProcessName"]?.Value?.ToString() ?? "?";
-                    var pid = e.NewEvent.Properties["ProcessID"]?.Value?.ToString() ?? "?";
-                    lock (_gate) _processCount++;
-                    _log.Write("timeadmin.process", new { account, name, pid });
+                    var pidStr = e.NewEvent.Properties["ProcessID"]?.Value?.ToString() ?? "0";
+                    if (!int.TryParse(pidStr, out var pid)) return;
+
+                    // NUR Prozesse erfassen, die tatsächlich ERHÖHT (Admin) laufen –
+                    // das sind die interessanten. Normale Prozesse ignorieren.
+                    if (!Native.ProcessInfo.IsElevated(pid)) return;
+
+                    lock (_gate)
+                    {
+                        _processCount++;
+                        if (!_elevatedNames.Contains(name)) _elevatedNames.Add(name);
+                    }
+                    _log.Write("timeadmin.process", new { account, name, pid, elevated = true });
                 }
                 catch { /* nie werfen */ }
             };
