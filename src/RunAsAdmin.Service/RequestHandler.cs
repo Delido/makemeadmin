@@ -301,6 +301,56 @@ public sealed class RequestHandler
         return null;
     }
 
+    /// <summary>Prüft, ob das Kind-Konto dauerhaft Admin ist (Tool waere dann wirkungslos).</summary>
+    public AdminCheckResponse AdminCheck()
+    {
+        var user = Elevator.GetActiveSessionUser();
+        if (user is null)
+            return new AdminCheckResponse { State = RequestState.Error, Message = "Keine aktive Sitzung." };
+
+        // Während einer aktiven Zeit-Admin-Session ist er legitim Admin – nicht warnen.
+        if (_timeAdmin.IsActive)
+            return new AdminCheckResponse { State = RequestState.Approved, IsPermanentAdmin = false,
+                Account = user.Value.Full, Message = "Admin-Zeit aktiv." };
+
+        var perm = Elevator.IsPermanentAdmin(user.Value.Sid);
+        _log.Write("admincheck", new { user = user.Value.Full, permanentAdmin = perm });
+        return new AdminCheckResponse
+        {
+            State = RequestState.Approved,
+            IsPermanentAdmin = perm,
+            Account = user.Value.Full,
+            Message = perm
+                ? "Dieses Konto ist dauerhaft Administrator. RunAsAdmin kann nichts kontrollieren, solange das so ist."
+                : "Konto ist Standardbenutzer – alles gut.",
+        };
+    }
+
+    /// <summary>Stuft das Kind-Konto auf Standardbenutzer herunter (nur mit korrekter PIN).</summary>
+    public AdminCheckResponse Demote(string? pin)
+    {
+        if (string.IsNullOrEmpty(_cfg.ParentPinHash))
+            return new AdminCheckResponse { State = RequestState.Denied, Message = "Erst eine Eltern-PIN festlegen." };
+        if (string.IsNullOrEmpty(pin) || !Secret.VerifyPin(pin, _cfg.ParentPinHash))
+            return new AdminCheckResponse { State = RequestState.Denied, Message = "Falsche PIN." };
+
+        var user = Elevator.GetActiveSessionUser();
+        if (user is null)
+            return new AdminCheckResponse { State = RequestState.Error, Message = "Keine aktive Sitzung." };
+        try
+        {
+            Elevator.DemoteFromAdministrators(user.Value.Sid);
+            _log.Write("admin.demoted", new { user = user.Value.Full });
+            return new AdminCheckResponse { State = RequestState.Approved, IsPermanentAdmin = false,
+                Account = user.Value.Full,
+                Message = "Konto auf Standardbenutzer heruntergestuft. Bitte neu anmelden, damit es wirkt." };
+        }
+        catch (Exception ex)
+        {
+            return new AdminCheckResponse { State = RequestState.Error, Message = $"Fehlgeschlagen: {ex.Message}" };
+        }
+    }
+
     /// <summary>Verlauf der letzten relevanten Ereignisse aus dem Audit-Log.</summary>
     public HistoryResponse History(int max = 30)
     {

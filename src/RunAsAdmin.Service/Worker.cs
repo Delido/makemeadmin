@@ -59,6 +59,15 @@ public sealed class Worker : BackgroundService
         // Tray-GUI in der Benutzersitzung sicherstellen (z. B. nach Update-Neustart).
         TryEnsureTrayGui(log);
 
+        // Einmal prüfen, ob das Kind-Konto dauerhaft Admin ist (Tool sonst wirkungslos).
+        try
+        {
+            var u = Elevation.Elevator.GetActiveSessionUser();
+            if (u is not null && !timeAdmin.IsActive && Elevation.Elevator.IsPermanentAdmin(u.Value.Sid))
+                log.Write("admin.permanent_warning", new { user = u.Value.Full });
+        }
+        catch { }
+
         _logger.LogInformation("RunAsAdmin-Dienst läuft. Pipe: {Pipe}", cfg.PipeName);
         try
         {

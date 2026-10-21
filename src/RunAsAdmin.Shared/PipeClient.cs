@@ -32,6 +32,23 @@ public static class PipeClient
                ?? new ElevationResponse { State = RequestState.Error, Message = "Keine Antwort erhalten." };
     }
 
+    /// <summary>Prüft, ob das Kind-Konto dauerhaft Admin ist.</summary>
+    public static async Task<AdminCheckResponse> AdminCheckAsync(CancellationToken ct = default)
+    {
+        var line = await SendAsync(new PipeMessage { Verb = PipeVerb.AdminCheck }, ct);
+        return (line is null ? null : AppConfig.Deserialize<AdminCheckResponse>(line))
+               ?? new AdminCheckResponse { State = RequestState.Error, Message = "Keine Antwort." };
+    }
+
+    /// <summary>Stuft das Kind-Konto auf Standardbenutzer herunter (PIN nötig).</summary>
+    public static async Task<AdminCheckResponse> DemoteAsync(string pin, CancellationToken ct = default)
+    {
+        var line = await SendAsync(new PipeMessage { Verb = PipeVerb.Demote,
+            Settings = new SettingsPayload { Pin = pin } }, ct);
+        return (line is null ? null : AppConfig.Deserialize<AdminCheckResponse>(line))
+               ?? new AdminCheckResponse { State = RequestState.Error, Message = "Keine Antwort." };
+    }
+
     /// <summary>Holt den Verlauf der letzten Ereignisse.</summary>
     public static async Task<HistoryResponse> HistoryAsync(CancellationToken ct = default)
     {

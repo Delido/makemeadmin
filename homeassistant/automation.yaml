@@ -116,6 +116,10 @@
             {{ ev.computer }}: Admin-Zeit gestartet ({{ d.minutes }} Min) für {{ d.user }}
           {%- elif e == 'timeadmin.revoked' -%}
             {{ ev.computer }}: Admin-Zeit beendet{% if d.appsText %} – genutzt: {{ d.appsText }}{% else %} (keine Admin-Programme){% endif %}
+          {%- elif e == 'admin.permanent_warning' -%}
+            ⚠️ {{ ev.computer }}: Konto {{ d.user }} ist DAUERHAFT Admin – RunAsAdmin wirkungslos!
+          {%- elif e == 'admin.demoted' -%}
+            {{ ev.computer }}: Konto {{ d.user }} auf Standardbenutzer heruntergestuft
           {%- else -%}
             {{ ev.computer }}: {{ e }}
           {%- endif -%}

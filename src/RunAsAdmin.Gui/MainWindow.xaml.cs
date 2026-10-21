@@ -103,6 +103,28 @@ public partial class MainWindow : Window
             StatusTitle.Text = "Dienst nicht erreichbar";
             StatusDetail.Text = "Bitte einen Erwachsenen fragen.";
         }
+
+        // Warnen, wenn das Konto dauerhaft Admin ist (Tool sonst wirkungslos).
+        try
+        {
+            var chk = await PipeClient.AdminCheckAsync();
+            AdminWarn.Visibility = chk.IsPermanentAdmin ? Visibility.Visible : Visibility.Collapsed;
+        }
+        catch { }
+    }
+
+    private async void Demote_Click(object sender, RoutedEventArgs e)
+    {
+        var pin = PinPrompt.Ask(this, "Eltern-PIN zum Herunterstufen eingeben:");
+        if (string.IsNullOrEmpty(pin)) return;
+        try
+        {
+            var resp = await PipeClient.DemoteAsync(pin);
+            var ok = resp.State == RequestState.Approved;
+            ShowOverlay(ok ? "✅" : "🚫", ok ? "Heruntergestuft" : "Nicht möglich", resp.Message, waiting: false);
+            if (ok) AdminWarn.Visibility = Visibility.Collapsed;
+        }
+        catch (Exception ex) { ShowOverlay("🚫", "Fehler", ex.Message, waiting: false); }
     }
 
     // ---------- Verlauf ----------

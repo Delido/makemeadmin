@@ -121,6 +121,14 @@ public sealed class PipeServer
             {
                 responseObject = _handler.History();
             }
+            else if (msg.Verb == PipeVerb.AdminCheck)
+            {
+                responseObject = _handler.AdminCheck();
+            }
+            else if (msg.Verb == PipeVerb.Demote)
+            {
+                responseObject = _handler.Demote(msg.Settings?.Pin);
+            }
             else if (msg.Verb == PipeVerb.GetSettings)
             {
                 responseObject = _handler.GetSettings();

@@ -353,6 +353,54 @@ public sealed class Elevator
     public static void RemoveUserFromAdministrators(SecurityIdentifier sid)
         => RemoveFromAdministrators(sid);
 
+    /// <summary>
+    /// Prüft, ob eine SID DAUERHAFT Mitglied der lokalen Admin-Gruppe ist
+    /// (per 'net localgroup', robust auch bei Microsoft-Konten).
+    /// </summary>
+    public static bool IsPermanentAdmin(SecurityIdentifier sid)
+    {
+        foreach (var grp in AdminGroupNames())
+        {
+            try
+            {
+                var psi = new ProcessStartInfo("net.exe", $"localgroup \"{grp}\"")
+                {
+                    CreateNoWindow = true, UseShellExecute = false,
+                    RedirectStandardOutput = true, RedirectStandardError = true,
+                    StandardOutputEncoding = System.Text.Encoding.UTF8,
+                };
+                using var p = Process.Start(psi);
+                if (p is null) continue;
+                var outp = p.StandardOutput.ReadToEnd();
+                p.WaitForExit(8000);
+                if (p.ExitCode != 0) continue;
+
+                // Jede Mitgliedszeile zu einer SID auflösen und vergleichen.
+                foreach (var raw in outp.Split('\n'))
+                {
+                    var name = raw.Trim();
+                    if (string.IsNullOrWhiteSpace(name) || name.StartsWith("-") || name.Contains("Alias")
+                        || name.Contains("Mitglieder") || name.Contains("Members")
+                        || name.Contains("Kommando") || name.Contains("command")) continue;
+                    try
+                    {
+                        var acc = new NTAccount(name);
+                        if (acc.Translate(typeof(SecurityIdentifier)) is SecurityIdentifier msid && msid == sid)
+                            return true;
+                    }
+                    catch { }
+                }
+                return false; // Gruppe gefunden, SID nicht dabei
+            }
+            catch { }
+        }
+        return false;
+    }
+
+    /// <summary>Stuft eine SID auf Standardbenutzer herunter (aus der Admin-Gruppe entfernen).</summary>
+    public static void DemoteFromAdministrators(SecurityIdentifier sid)
+        => RemoveFromAdministrators(sid);
+
     // --- Gruppenverwaltung über System.DirectoryServices.AccountManagement ---
 
     /// <summary>

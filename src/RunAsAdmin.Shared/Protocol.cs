@@ -21,6 +21,20 @@ public enum PipeVerb
     PinStatus = 7,
     /// <summary>Verlauf der letzten Ereignisse abfragen (für die GUI-Anzeige).</summary>
     History = 8,
+    /// <summary>Prüfen, ob das Kind-Konto dauerhaft Admin ist (Warnung).</summary>
+    AdminCheck = 9,
+    /// <summary>Kind-Konto auf Standardbenutzer herunterstufen (nur mit PIN).</summary>
+    Demote = 10,
+}
+
+/// <summary>Antwort auf AdminCheck / Demote.</summary>
+public sealed class AdminCheckResponse
+{
+    public RequestState State { get; set; }
+    public string Message { get; set; } = "";
+    /// <summary>true = Kind-Konto ist dauerhaft Admin (Tool wirkungslos!).</summary>
+    public bool IsPermanentAdmin { get; set; }
+    public string Account { get; set; } = "";
 }
 
 /// <summary>Ein Verlaufseintrag für die GUI.</summary>
