@@ -271,9 +271,11 @@ public sealed class Elevator
             try
             {
                 // 6) Prozess mit dem erhöhten Token im sichtbaren Desktop starten.
-                //    Umgebungsblock wird aus dem ERHÖHTEN Token gebildet (SYSTEM-Kontext);
-                //    das geladene Kind-Profil sorgt dennoch für korrekte HKCU-Registry.
-                var pid = StartProcessWithToken(primaryToken, exePath, arguments, workingDir, onStep);
+                //    Rechte aus dem SYSTEM-Token (primaryToken), ABER die Umgebung aus
+                //    dem Kind-Token (profileToken mit geladenem Profil) -> USERPROFILE/
+                //    APPDATA zeigen korrekt auf C:\Users\<kind>.
+                var pid = StartProcessWithToken(primaryToken, exePath, arguments, workingDir, onStep,
+                    envToken: profileToken);
                 onStep("Erhöht gestartet (SYSTEM-Token aus winlogon, Muster 2).");
                 return new(true, pid, "Prozess erhöht gestartet (SYSTEM-Kontext im Kind-Desktop).");
             }
@@ -462,7 +464,7 @@ public sealed class Elevator
         => StartProcessWithToken(primaryToken, exePath, arguments, workingDir, _ => { });
 
     private static int StartProcessWithToken(IntPtr primaryToken, string exePath, string? arguments,
-        string? workingDir, Action<string> onStep)
+        string? workingDir, Action<string> onStep, IntPtr envToken = default)
     {
         // Session-ID des Tokens auf die aktive Konsolensitzung setzen, damit der
         // Prozess in der SICHTBAREN Sitzung startet (sonst Session 0 -> unsichtbar
@@ -474,7 +476,12 @@ public sealed class Elevator
             SetTokenInformation(primaryToken, TokenSessionId, ref sess, sizeof(uint));
         }
 
-        if (!CreateEnvironmentBlock(out var env, primaryToken, false))
+        // Umgebungsblock: wenn ein envToken übergeben wurde (Kind-Token mit geladenem
+        // Profil), DARAUS bilden – so zeigen USERPROFILE/APPDATA auf das Kind-Profil
+        // (C:\Users\<kind>), nicht auf das SYSTEM-Profil. Sonst würde ein als SYSTEM
+        // laufendes Programm seine Dateien im falschen Pfad suchen und oft crashen.
+        var envSource = envToken != IntPtr.Zero ? envToken : primaryToken;
+        if (!CreateEnvironmentBlock(out var env, envSource, false))
             throw new Win32Exception(Marshal.GetLastPInvokeError(), "CreateEnvironmentBlock fehlgeschlagen.");
         try
         {
