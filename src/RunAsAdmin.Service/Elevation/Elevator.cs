@@ -675,10 +675,19 @@ public sealed class Elevator
 
             // KEIN CREATE_NEW_CONSOLE (macht GUI-Programme unsichtbar / zeigt leere
             // Konsole). Stattdessen normaler Fensterstart in der Benutzersitzung.
+            // CREATE_BREAKAWAY_FROM_JOB: der neue Prozess soll NICHT an das Job-Objekt
+            // des Dienstes gebunden sein (das verursacht sonst "Access denied" und einen
+            // Prozess, der nicht sauber in der Benutzersitzung lebt).
             if (!CreateProcessAsUser(primaryToken, null, cmd, IntPtr.Zero, IntPtr.Zero, false,
-                    CREATE_UNICODE_ENVIRONMENT | NORMAL_PRIORITY_CLASS,
+                    CREATE_UNICODE_ENVIRONMENT | NORMAL_PRIORITY_CLASS | CREATE_BREAKAWAY_FROM_JOB,
                     env, dir, ref si, out var pi))
-                throw new Win32Exception(Marshal.GetLastPInvokeError(), "CreateProcessAsUser fehlgeschlagen.");
+            {
+                // Fallback ohne Breakaway (falls das Job kein Breakaway erlaubt).
+                if (!CreateProcessAsUser(primaryToken, null, cmd, IntPtr.Zero, IntPtr.Zero, false,
+                        CREATE_UNICODE_ENVIRONMENT | NORMAL_PRIORITY_CLASS,
+                        env, dir, ref si, out pi))
+                    throw new Win32Exception(Marshal.GetLastPInvokeError(), "CreateProcessAsUser fehlgeschlagen.");
+            }
 
             // Prüfen, ob der Prozess nach kurzer Zeit noch lebt (Diagnose: stirbt er sofort?).
             try

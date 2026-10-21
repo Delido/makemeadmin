@@ -23,6 +23,12 @@ public sealed class RequestHandler
     /// <summary>Feste Dauer der Admin-Zeit (laut Vorgabe 15 Minuten).</summary>
     public const int TimeAdminMinutes = 15;
 
+    /// <summary>
+    /// Kurze Admin-Dauer beim Start einer freigegebenen App. Lang genug, damit das
+    /// Programm (inkl. Anti-Cheat-Treiber) hochkommt, danach automatischer Entzug.
+    /// </summary>
+    public const int AppAdminMinutes = 2;
+
     /// <summary>Ist der aktive Freigabe-Weg (HA-Webhook oder Server-Add-on) eingerichtet?</summary>
     private bool ApprovalConfigured => _cfg.Mode == ApprovalMode.Server
         ? !string.IsNullOrWhiteSpace(_cfg.Server.BaseUrl)
@@ -314,15 +320,10 @@ public sealed class RequestHandler
                 _cfg.AddAllowedApp(permanent);
                 _log.Write("request.persisted", new { requestId, permanent.Name, permanent.Path });
 
-                // Dauerhaft freigegeben -> geplante Aufgabe anlegen, damit das Kind das
-                // Programm künftig selbst erhöht starten kann (Reiter „Spiele"/Tray).
-                var acct = GetActiveAccount();
-                if (acct is not null)
-                {
-                    var (tok, tmsg) = _taskLauncher.Register(permanent, acct);
-                    _log.Write("game.register_result", new { permanent.Name, ok = tok, msg = tmsg });
-                }
-                else _log.Write("game.register_skipped", new { permanent.Name, reason = "kein aktiver Benutzer" });
+                // Hinweis: Der Start läuft jetzt primär über den Dienst (Weg A,
+                // LaunchElevatedAsService). Die geplante Aufgabe wird NICHT mehr bei der
+                // Freigabe angelegt – sie entsteht nur noch bei Bedarf im Task-Fallback
+                // (TryLaunchViaTask), falls Weg A ausfällt. Das vermeidet verwaiste Tasks.
 
                 ReportRegisteredGames();   // Add-on-Übersicht aktualisieren
                 app = permanent;   // ab hier mit dem dauerhaften Eintrag weiterarbeiten
@@ -470,31 +471,33 @@ public sealed class RequestHandler
 
         _log.Write("game.launch_requested", new { app.Name, requestingUser });
 
-        // Weg A: Der Dienst (SYSTEM) startet das Programm selbst ERHÖHT in der
-        // sichtbaren Sitzung des Kindes – kein UAC, Kind bleibt Standardbenutzer.
-        // (Der frühere Task-Scheduler-Weg konnte als Standardbenutzer NICHT erhöhen
-        //  und brachte deshalb doch eine UAC-Abfrage.)
-        var elevated = _elevator.LaunchElevatedAsService(app.Path, app.Arguments, null,
-            step => _log.Write("game.launch_step", new { app.Name, step }));
-        if (elevated.Ok)
+        // KONZEPT (bewährt): Das Kind wird für diese freigegebene App KURZ (AppAdminMinutes)
+        // global Administrator – ohne Eltern-Freigabe, weil die App vorab dauerhaft erlaubt
+        // wurde. So startet das Programm erhöht im ECHTEN Kind-Kontext (sichtbar, richtiges
+        // Profil, Anti-Cheat-tauglich). Danach werden die Rechte automatisch wieder entzogen.
+        var (grantOk, grantMsg) = _timeAdmin.GrantForAppLaunch(AppAdminMinutes, app.Name);
+        if (!grantOk)
         {
-            _log.Write("game.launched", new { game = app.Name, user = requestingUser, elevated.ProcessId });
-            _log.Write("launch.success", new { app.Name, via = "service-elevated", decision = "Game" });
+            _log.Write("game.grant_failed", new { app.Name, grantMsg });
+            return new ElevationResponse { State = RequestState.Error, Decision = "Game",
+                Message = $"Adminrechte konnten nicht erteilt werden: {grantMsg}" };
+        }
+
+        // Programm im Kind-Kontext starten (das Kind ist jetzt kurz Admin -> erhöht,
+        // sichtbar, kein UAC). Der Start läuft im normalen Benutzerkontext der Sitzung.
+        var launch = _elevator.LaunchElevated(app.Path, app.Arguments, null,
+            step => _log.Write("game.launch_step", new { app.Name, step }));
+        if (launch.Ok)
+        {
+            _log.Write("game.launched", new { game = app.Name, user = requestingUser, launch.ProcessId, adminMinutes = AppAdminMinutes });
+            _log.Write("launch.success", new { app.Name, via = "shortadmin", decision = "Game" });
             return new ElevationResponse { State = RequestState.Approved, Decision = "Game",
                 Message = $"{app.Name} wird gestartet." };
         }
-        _log.Write("game.elevated_failed", new { app.Name, detail = elevated.Detail });
 
-        // Rückfall: über die geplante Aufgabe (hilft, wenn das Konto doch Admin ist).
-        var (ok, msg) = TryLaunchViaTask(app);
-        if (ok)
-        {
-            _log.Write("game.launched", new { game = app.Name, user = requestingUser });
-            _log.Write("launch.success", new { app.Name, via = "task", decision = "Game" });
-            return new ElevationResponse { State = RequestState.Approved, Decision = "Game", Message = msg };
-        }
+        _log.Write("game.launch_failed", new { app.Name, detail = launch.Detail });
         return new ElevationResponse { State = RequestState.Error, Decision = "Game",
-            Message = $"Start fehlgeschlagen: {elevated.Detail}" };
+            Message = $"Start fehlgeschlagen: {launch.Detail}" };
     }
 
     /// <summary>

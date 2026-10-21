@@ -102,6 +102,33 @@ public sealed class TaskLauncher
         _log.Write("game.task_unregistered", new { app.Name, taskName, code });
     }
 
+    /// <summary>
+    /// Entfernt ALLE von diesem Tool angelegten geplanten Aufgaben (RunAsAdmin_Game_*).
+    /// Seit der Start über den Dienst (Weg A) läuft, sind sie überflüssig; so bleiben
+    /// keine verwaisten Aufgaben zurück. Best-effort.
+    /// </summary>
+    public void PurgeAllGameTasks()
+    {
+        try
+        {
+            // Alle Aufgabennamen auflisten und die mit unserem Präfix löschen.
+            var (code, output) = RunSchtasks("/Query /FO LIST");
+            if (code != 0) return;
+            foreach (var line in output.Split('\n'))
+            {
+                var l = line.Trim();
+                // Zeilen wie: "TaskName:    \RunAsAdmin_Game_XYZ"
+                var idx = l.IndexOf(TaskPrefix, StringComparison.OrdinalIgnoreCase);
+                if (idx < 0) continue;
+                var name = l[idx..].Trim();
+                if (string.IsNullOrEmpty(name)) continue;
+                RunSchtasks($"/Delete /TN \"{name}\" /F");
+                _log.Write("game.task_purged", new { name });
+            }
+        }
+        catch { }
+    }
+
     /// <summary>Baut die Aufgaben-XML: erhöht, interaktiv, im Spiel-Ordner.</summary>
     private static string BuildTaskXml(string exePath, string? args, string workDir, string account)
     {

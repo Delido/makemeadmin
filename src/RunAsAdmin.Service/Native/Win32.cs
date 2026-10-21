@@ -18,6 +18,10 @@ internal static partial class Win32
     internal const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
     internal const uint CREATE_NEW_CONSOLE = 0x00000010;
     internal const uint NORMAL_PRIORITY_CLASS = 0x00000020;
+    // Loest den neuen Prozess aus dem Job-Objekt des Dienstes -> verhindert
+    // "Access denied" (Fehler 5) beim Binden an das Dienst-Job und erlaubt einen
+    // eigenstaendigen interaktiven Prozess.
+    internal const uint CREATE_BREAKAWAY_FROM_JOB = 0x01000000;
 
     internal enum SECURITY_IMPERSONATION_LEVEL { Anonymous, Identification, Impersonation, Delegation }
     internal enum TOKEN_TYPE { TokenPrimary = 1, TokenImpersonation }

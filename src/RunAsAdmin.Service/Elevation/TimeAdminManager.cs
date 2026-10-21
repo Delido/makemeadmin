@@ -161,6 +161,58 @@ public sealed class TimeAdminManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// Kurz-Admin für den Start einer FREIGEGEBENEN App (ohne Eltern-Freigabe, da
+    /// die App vorab dauerhaft erlaubt wurde). Gewährt für <paramref name="minutes"/>
+    /// Minuten Admin, damit die App erhöht im echten Kind-Kontext startet (sichtbar,
+    /// richtiges Profil). Läuft schon eine Admin-Zeit, wird der Timer nur verlängert.
+    /// Rückgabe: Ok = Konto ist jetzt (kurz) Admin, Programm kann gestartet werden.
+    /// </summary>
+    public (bool Ok, string Message) GrantForAppLaunch(int minutes, string appName)
+    {
+        lock (_gate)
+        {
+            // Bereits Admin-Zeit aktiv? -> nur verlängern, kein neuer Grant.
+            if (_activeSid is not null)
+            {
+                var newExpiry = DateTimeOffset.Now.AddMinutes(minutes);
+                if (newExpiry > _expiresAt)
+                {
+                    _expiresAt = newExpiry;
+                    _timer?.Change(TimeSpan.FromMinutes(minutes), Timeout.InfiniteTimeSpan);
+                    WriteState();
+                }
+                _log.Write("applaunch.admin_extended", new { appName, minutes });
+                return (true, "Adminrechte (kurz) verlängert.");
+            }
+
+            var user = Elevator.GetActiveSessionUser(s => _log.Write("applaunch.session_step", new { appName, step = s }));
+            if (user is null)
+                return (false, "Keine aktive Benutzersitzung gefunden.");
+
+            // Schon dauerhaft Admin? Dann ist nichts zu tun – App startet ohnehin erhöht.
+            if (!Elevator.AddUserToAdministrators(user.Value.Sid, out var detail))
+            {
+                _log.Write("applaunch.already_admin", new { appName });
+                return (true, "Konto ist bereits Administrator.");
+            }
+
+            _activeSid = user.Value.Sid;
+            _activeAccount = user.Value.Account;
+            _expiresAt = DateTimeOffset.Now.AddMinutes(minutes);
+            _processCount = 0;
+            _elevatedNames.Clear();
+            WriteState();
+
+            _log.Write("applaunch.admin_granted", new { appName, minutes, user = user.Value.Full, detail });
+            StartProcessWatch(user.Value.Account);
+            _timer = new Timer(_ => Revoke("applaunch_timeout"), null,
+                TimeSpan.FromMinutes(minutes), Timeout.InfiniteTimeSpan);
+
+            return (true, $"Kurz-Admin für {minutes} Minuten gewährt.");
+        }
+    }
+
     /// <summary>Entzieht die Adminrechte sofort (Timeout oder Dienst-Stopp).</summary>
     public void Revoke(string why)
     {

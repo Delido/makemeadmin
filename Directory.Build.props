@@ -2,10 +2,10 @@
   <!-- Zentrale Version fuer ALLE Projekte (GUI, Service, Installer).
        So stimmt die Dateiversion jeder exe/dll mit dem Release ueberein. -->
   <PropertyGroup>
-    <Version>1.6.8</Version>
-    <AssemblyVersion>1.6.8.0</AssemblyVersion>
-    <FileVersion>1.6.8.0</FileVersion>
-    <InformationalVersion>1.6.8</InformationalVersion>
+    <Version>1.7.0</Version>
+    <AssemblyVersion>1.7.0.0</AssemblyVersion>
+    <FileVersion>1.7.0.0</FileVersion>
+    <InformationalVersion>1.7.0</InformationalVersion>
     <!-- Sicherstellen, dass die Versionsattribute wirklich erzeugt werden. -->
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <GenerateAssemblyVersionAttribute>true</GenerateAssemblyVersionAttribute>
