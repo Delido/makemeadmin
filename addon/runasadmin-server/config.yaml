@@ -1,0 +1,27 @@
+name: RunAsAdmin Server
+version: "0.1.0"
+slug: runasadmin_server
+description: Zentrale Steuerung und Verlauf für RunAsAdmin auf den Kinder-PCs.
+arch:
+  - amd64
+  - aarch64
+  - armv7
+init: false
+# Web-UI ueber den HA-Ingress (kein eigener Port noetig; sicher hinter HA-Login).
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:shield-account
+panel_title: RunAsAdmin
+# Zusaetzlich ein fester Port, damit die Kinder-PCs die API erreichen.
+ports:
+  "8099/tcp": 8099
+ports_description:
+  "8099/tcp": API fuer die Kinder-PCs (RunAsAdmin-Dienst)
+options:
+  # Token, mit dem sich die Kinder-PCs anmelden (in config.json des PCs eintragen).
+  pc_token: ""
+  # Optional: HA-Notify-Dienst fuer Push bei neuer Anfrage (z. B. mobile_app_xyz).
+  notify_service: ""
+schema:
+  pc_token: str
+  notify_service: str?

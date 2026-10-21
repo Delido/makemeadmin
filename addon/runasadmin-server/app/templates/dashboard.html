@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RunAsAdmin</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+  <style>
+    :root { --bg:#0E1116; --card:#1A202A; --stroke:#ffffff22; --text:#E6E9EE; --muted:#8A93A1; --accent:#2FBF71; --deny:#E05A4A; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text);
+           font-family:'Segoe UI',system-ui,sans-serif; padding:20px; }
+    h1 { font-size:22px; margin:0 0 4px; }
+    .sub { color:var(--muted); font-size:13px; margin-bottom:18px; }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:14px;
+            padding:16px 18px; margin-bottom:16px; }
+    .card h2 { font-size:15px; margin:0 0 12px; color:var(--text); }
+    .req { display:flex; align-items:center; justify-content:space-between;
+           padding:10px 0; border-bottom:1px solid #ffffff10; }
+    .req:last-child { border-bottom:none; }
+    .req .who { font-size:14px; }
+    .req .meta { color:var(--muted); font-size:12px; }
+    button { border:none; border-radius:9px; padding:8px 14px; font-size:13px;
+             font-weight:600; cursor:pointer; color:#fff; }
+    .allow { background:var(--accent); } .deny { background:var(--deny); }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media(max-width:720px){ .grid{ grid-template-columns:1fr; } }
+    .ev { display:flex; gap:10px; padding:5px 0; font-size:13px; }
+    .ev .t { color:var(--muted); width:130px; flex:none; font-variant-numeric:tabular-nums; }
+    .muted { color:var(--muted); font-size:13px; }
+    canvas { max-height:220px; }
+  </style>
+</head>
+<body>
+  <h1>🛡️ RunAsAdmin</h1>
+  <div class="sub">Zentrale Steuerung und Verlauf der Kinder-PCs</div>
+
+  <div class="card">
+    <h2>Offene Anfragen</h2>
+    {% if pending %}
+      {% for r in pending %}
+      <div class="req">
+        <div>
+          <div class="who">{{ r.user }} an {{ r.computer }}</div>
+          <div class="meta">{% if r.reason %}{{ r.reason }} · {% endif %}möchte 15 Minuten Admin</div>
+        </div>
+        <form method="post" action="decide" style="display:flex;gap:8px;">
+          <input type="hidden" name="request_id" value="{{ r.id }}">
+          <button class="allow" name="action" value="allow">Erlauben</button>
+          <button class="deny" name="action" value="deny">Ablehnen</button>
+        </form>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="muted">Keine offenen Anfragen.</div>
+    {% endif %}
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Admin-Zeiten pro Tag</h2>
+      <canvas id="perDay"></canvas>
+    </div>
+    <div class="card">
+      <h2>Meistgenutzte Admin-Programme</h2>
+      <canvas id="topApps"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Verlauf</h2>
+    {% if events %}
+      {% for e in events %}
+      <div class="ev">
+        <span class="t">{{ e.ts | fmt_ts }}</span>
+        <span>{{ e.computer }} · {{ e.type }}{% if e.detail %} – {{ e.detail }}{% endif %}</span>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="muted">Noch keine Ereignisse.</div>
+    {% endif %}
+  </div>
+
+  <script>
+    const perDay = {{ per_day | tojson }};
+    const topApps = {{ top_apps | tojson }};
+    const axis = { ticks:{color:'#8A93A1'}, grid:{color:'#ffffff14'} };
+    new Chart(document.getElementById('perDay'), {
+      type:'bar',
+      data:{ labels: perDay.map(d=>d.day),
+             datasets:[{ data: perDay.map(d=>d.n), backgroundColor:'#2FBF71', borderRadius:6 }] },
+      options:{ plugins:{legend:{display:false}}, scales:{x:axis,y:axis} }
+    });
+    new Chart(document.getElementById('topApps'), {
+      type:'bar', data:{ labels: topApps.map(a=>a[0]),
+             datasets:[{ data: topApps.map(a=>a[1]), backgroundColor:'#2A5BD7', borderRadius:6 }] },
+      options:{ indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:axis,y:axis} }
+    });
+  </script>
+</body>
+</html>
