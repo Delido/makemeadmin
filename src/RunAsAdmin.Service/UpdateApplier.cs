@@ -41,19 +41,38 @@ public static class UpdateApplier
                 return Fail("Update-Quelle nicht vertrauenswürdig.");
             }
 
-            // In das EIGENE ProgramData-Verzeichnis herunterladen, nicht in SystemTemp.
-            // Dort hat SYSTEM garantiert Vollzugriff (vom Installer gehärtet) – der
-            // SystemTemp-Ordner konnte eine ACL tragen, die SYSTEM das Schreiben verbot
-            // ("Access denied" beim Update). Diese Altlast wird zusätzlich aufgeräumt.
             TryPurgeLegacyUpdateDir(log);
-            var baseDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                "RunAsAdmin", "update");
-            var dir = Path.Combine(baseDir, Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(dir);
-            TryCleanupOldDirs(baseDir, dir);   // alte Reste best-effort aufräumen
-            var zipPath = Updater.DownloadAsync(info.DownloadUrl, dir).GetAwaiter().GetResult();
-            log.Write("update.downloaded", new { info.LatestVersion, zipPath });
+
+            // Mehrere mögliche Download-Orte probieren. Scheitert einer mit
+            // "Access denied", ACL reparieren (als SYSTEM erlaubt) bzw. den nächsten
+            // Ort nehmen. So haengt das Update nie an einer kaputten Ordner-ACL.
+            var candidates = new[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "RunAsAdmin", "update"),
+                Path.Combine(Path.GetDirectoryName(Environment.ProcessPath) ?? @"C:\Program Files\RunAsAdmin", "update"),
+                Path.Combine(Path.GetTempPath(), "RunAsAdminUpd"),
+            };
+
+            string? zipPath = null; string lastErr = "";
+            foreach (var baseDir in candidates)
+            {
+                try
+                {
+                    var dir = Path.Combine(baseDir, Guid.NewGuid().ToString("N"));
+                    EnsureDirWritable(dir, log);     // Ordner anlegen + ACL sicherstellen
+                    TryCleanupOldDirs(baseDir, dir);
+                    zipPath = Updater.DownloadAsync(info.DownloadUrl, dir).GetAwaiter().GetResult();
+                    log.Write("update.downloaded", new { info.LatestVersion, zipPath });
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    lastErr = ex.Message;
+                    log.Write("update.download_retry", new { baseDir, error = ex.Message });
+                }
+            }
+            if (zipPath is null)
+                return Fail($"Update-Download fehlgeschlagen: {lastErr}");
             return Apply(zipPath, log);
         }
         catch (Exception ex)
@@ -86,6 +105,35 @@ public static class UpdateApplier
             }
         }
         catch { }
+    }
+
+    /// <summary>
+    /// Legt den Ordner an und stellt sicher, dass SYSTEM dort schreiben darf. Testet
+    /// das mit einer echten Datei; bei Fehler ACL zurücksetzen und erneut testen.
+    /// Wirft, wenn es dauerhaft nicht schreibbar ist (dann nächster Kandidat).
+    /// </summary>
+    private static void EnsureDirWritable(string dir, AuditLog log)
+    {
+        Directory.CreateDirectory(dir);
+        var probe = Path.Combine(dir, ".w");
+        try
+        {
+            File.WriteAllText(probe, "x");
+            File.Delete(probe);
+            return; // schreibbar
+        }
+        catch (UnauthorizedAccessException) { /* reparieren */ }
+
+        // ACL der Ordnerkette reparieren: Besitz übernehmen + SYSTEM/Admins Vollzugriff.
+        var parent = Path.GetDirectoryName(dir.TrimEnd('\\'));
+        foreach (var target in new[] { parent, dir }.Where(p => !string.IsNullOrEmpty(p)))
+        {
+            RunQuiet("takeown", $"/f \"{target}\" /r /d j");
+            RunQuiet("icacls", $"\"{target}\" /grant \"*S-1-5-18:(OI)(CI)F\" \"*S-1-5-32-544:(OI)(CI)F\" /t");
+        }
+        File.WriteAllText(probe, "x");   // wirft, wenn es immer noch nicht geht -> nächster Kandidat
+        File.Delete(probe);
+        log.Write("update.dir_acl_repaired", new { dir });
     }
 
     private static void RunQuiet(string file, string args)
