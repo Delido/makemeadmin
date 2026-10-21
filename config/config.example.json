@@ -3,13 +3,13 @@
   "PipeName": "RunAsAdmin",
   "ApprovalTimeoutSeconds": 120,
   "Mode": "HomeAssistant",
+  "_hinweis": "Geheimnis/Token NICHT hier eintragen - das wird in der GUI (Eltern-Einstellungen) gesetzt und DPAPI-verschluesselt gespeichert. Diese Datei enthaelt nie Klartext-Geheimnisse.",
   "HomeAssistant": {
     "Enabled": false,
     "BaseUrl": "",
     "RequestWebhookId": "runasadmin_request",
     "EventWebhookId": "runasadmin_event",
     "ReportEvents": true,
-    "CallbackSecret": "",
     "CallbackPort": 8731
   },
   "Server": {

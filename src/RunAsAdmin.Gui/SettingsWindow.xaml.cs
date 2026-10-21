@@ -70,6 +70,18 @@ public partial class SettingsWindow : Window
 
     private void Mode_Changed(object sender, RoutedEventArgs e) => UpdateModeVisibility();
 
+    /// <summary>Erzeugt ein starkes Zufalls-Geheimnis und zeigt es zum Kopieren an.</summary>
+    private void GenSecret_Click(object sender, RoutedEventArgs e)
+    {
+        var bytes = System.Security.Cryptography.RandomNumberGenerator.GetBytes(24);
+        var secret = Convert.ToHexString(bytes).ToLowerInvariant();
+        SecretBox.Password = secret;
+        SecretPlain.Text = $"Erzeugt: {secret}\nDiesen Wert in Home Assistant eintragen, dann hier speichern.";
+        SecretPlain.Visibility = Visibility.Visible;
+        try { System.Windows.Clipboard.SetText(secret); SecretPlain.Text += " (in Zwischenablage kopiert)"; }
+        catch { }
+    }
+
     private async void Save_Click(object sender, RoutedEventArgs e)
     {
         var server = ModeServer.IsChecked == true;
