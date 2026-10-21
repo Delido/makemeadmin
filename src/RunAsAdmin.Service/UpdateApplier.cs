@@ -41,8 +41,12 @@ public static class UpdateApplier
                 return Fail("Update-Quelle nicht vertrauenswürdig.");
             }
 
-            var dir = Path.Combine(Path.GetTempPath(), "RunAsAdminUpdateSvc");
-            try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch { }
+            // Frischer, eindeutiger Download-Ordner pro Lauf – so kann nie eine alte,
+            // noch gesperrte RunAsAdmin-Update.zip aus einem Abbruch den Download blockieren.
+            var baseDir = Path.Combine(Path.GetTempPath(), "RunAsAdminUpdateSvc");
+            var dir = Path.Combine(baseDir, Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            TryCleanupOldDirs(baseDir, dir);   // alte Reste best-effort aufräumen
             var zipPath = Updater.DownloadAsync(info.DownloadUrl, dir).GetAwaiter().GetResult();
             log.Write("update.downloaded", new { info.LatestVersion, zipPath });
             return Apply(zipPath, log);
@@ -52,6 +56,25 @@ public static class UpdateApplier
             log.Write("update.check_failed", new { error = ex.Message });
             return Fail($"Update-Prüfung fehlgeschlagen: {ex.Message}");
         }
+    }
+
+    /// <summary>Löscht alte Download-Unterordner (außer dem aktuellen) best-effort.</summary>
+    private static void TryCleanupOldDirs(string baseDir, string keep)
+    {
+        try
+        {
+            foreach (var d in Directory.GetDirectories(baseDir))
+            {
+                if (string.Equals(d, keep, StringComparison.OrdinalIgnoreCase)) continue;
+                try { Directory.Delete(d, true); } catch { }
+            }
+            // Evtl. direkt in baseDir liegende Alt-Dateien (aus früherer Version) entfernen.
+            foreach (var f in Directory.GetFiles(baseDir))
+            {
+                try { File.SetAttributes(f, FileAttributes.Normal); File.Delete(f); } catch { }
+            }
+        }
+        catch { }
     }
 
     public static ElevationResponse Apply(string zipPath, AuditLog log)

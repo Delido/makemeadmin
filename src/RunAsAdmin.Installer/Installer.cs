@@ -45,10 +45,38 @@ public sealed class Installer
         FindProgramPaths();
         CreateEventSource();
         HardenPermissions();
+        CleanupUpdateTemp();   // alte, evtl. gesperrte Update-Reste entfernen
         ReserveUrls();
         CreateShortcuts();
         CreateContextMenu();
         RegisterService();
+    }
+
+    /// <summary>
+    /// Räumt den Update-Download-Ordner des Dienstes auf. Ein früherer Lauf konnte
+    /// dort eine gesperrte RunAsAdmin-Update.zip hinterlassen, die das Auto-Update
+    /// blockiert ("Access denied"). Best-effort, inkl. Rechte-Übernahme.
+    /// </summary>
+    private void CleanupUpdateTemp()
+    {
+        try
+        {
+            // SYSTEM-Temp (Dienst läuft als SYSTEM): C:\Windows\SystemTemp bzw. ...\Temp
+            var candidates = new[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SystemTemp", "RunAsAdminUpdateSvc"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp", "RunAsAdminUpdateSvc"),
+            };
+            foreach (var dir in candidates)
+            {
+                if (!Directory.Exists(dir)) continue;
+                Run("takeown", $"/f \"{dir}\" /r /d j", ignoreError: true);
+                Run("icacls", $"\"{dir}\" /grant \"*S-1-5-18:(OI)(CI)F\" /t", ignoreError: true);
+                try { Directory.Delete(dir, true); } catch { }
+            }
+            Step("Alte Update-Reste entfernt.");
+        }
+        catch (Exception ex) { Step($"Update-Reste übersprungen: {ex.Message}"); }
     }
 
     private void Step(string msg) => _out.WriteLine($"  • {msg}");
