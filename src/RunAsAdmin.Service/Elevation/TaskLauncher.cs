@@ -54,10 +54,12 @@ public sealed class TaskLauncher
             // Task Scheduler erwartet UTF-16 mit BOM.
             File.WriteAllText(xmlFile, xml, new UnicodeEncoding(false, true));
 
-            // /RU ohne /RP: fuer HIGHEST im eigenen Benutzerkontext kein Passwort nötig
-            // (S4U/InteractiveToken – die Aufgabe läuft nur bei angemeldetem Benutzer).
+            // WICHTIG: KEIN /RU auf der Kommandozeile! Der Principal (UserId +
+            // InteractiveToken + RunLevel) steht vollständig im XML. Mit /RU ohne /RP
+            // fragt schtasks interaktiv nach einem Passwort und hängt dann endlos,
+            // weil kein stdin vorhanden ist. Das XML genügt völlig.
             var (code, output) = RunSchtasks(
-                $"/Create /TN \"{taskName}\" /XML \"{xmlFile}\" /RU \"{runAsAccount}\" /F");
+                $"/Create /TN \"{taskName}\" /XML \"{xmlFile}\" /F");
             if (code != 0)
             {
                 _log.Write("game.task_register_failed", new { app.Name, taskName, code, output });
@@ -142,6 +144,7 @@ $@"<?xml version=""1.0"" encoding=""UTF-16""?>
         {
             CreateNoWindow = true,
             UseShellExecute = false,
+            RedirectStandardInput = true,    // stdin schließen -> keine interaktive Abfrage hängt
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             StandardOutputEncoding = Encoding.UTF8,
@@ -149,8 +152,20 @@ $@"<?xml version=""1.0"" encoding=""UTF-16""?>
         };
         using var p = Process.Start(psi);
         if (p is null) return (-1, "schtasks nicht gestartet");
-        var outp = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
-        p.WaitForExit(15000);
-        return (p.ExitCode, outp.Trim());
+
+        // stdin sofort schließen: fragt schtasks doch nach etwas (z. B. Passwort),
+        // bekommt es EOF und bricht ab, statt endlos zu warten.
+        try { p.StandardInput.Close(); } catch { }
+
+        // Ausgabe asynchron einsammeln, damit das Lesen nicht blockiert.
+        var outTask = p.StandardOutput.ReadToEndAsync();
+        var errTask = p.StandardError.ReadToEndAsync();
+        if (!p.WaitForExit(20000))
+        {
+            try { p.Kill(true); } catch { }
+            return (-2, "schtasks hängt (Timeout) – abgebrochen");
+        }
+        var outp = (outTask.GetAwaiter().GetResult() + errTask.GetAwaiter().GetResult()).Trim();
+        return (p.ExitCode, outp);
     }
 }

@@ -96,16 +96,18 @@
                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <StackPanel x:Name="Nav" DockPanel.Dock="Top" Margin="0,8,0,0">
-                        <RadioButton x:Name="NavStart" Style="{StaticResource NavBtn}" Tag="🏠" Content="Start"
+                        <RadioButton x:Name="NavStart" GroupName="MainNav" Style="{StaticResource NavBtn}" Tag="🏠" Content="Start"
                                      IsChecked="True" Checked="Nav_Checked"/>
-                        <RadioButton x:Name="NavGames" Style="{StaticResource NavBtn}" Tag="🚀" Content="Apps"
+                        <RadioButton x:Name="NavGames" GroupName="MainNav" Style="{StaticResource NavBtn}" Tag="🚀" Content="Apps"
                                      Checked="Nav_Checked"/>
-                        <RadioButton x:Name="NavHistory" Style="{StaticResource NavBtn}" Tag="📜" Content="Verlauf"
+                        <RadioButton x:Name="NavHistory" GroupName="MainNav" Style="{StaticResource NavBtn}" Tag="📜" Content="Verlauf"
                                      Checked="Nav_Checked"/>
-                        <RadioButton x:Name="NavStatus" Style="{StaticResource NavBtn}" Tag="📊" Content="Status"
+                        <RadioButton x:Name="NavStatus" GroupName="MainNav" Style="{StaticResource NavBtn}" Tag="📊" Content="Status"
                                      Checked="Nav_Checked"/>
                     </StackPanel>
-                    <RadioButton x:Name="NavSettings" DockPanel.Dock="Bottom" Style="{StaticResource NavBtn}"
+                    <!-- Gleicher GroupName wie oben, damit "Eltern" container-uebergreifend
+                         zur selben RadioButton-Gruppe gehoert (sonst feuert Checked nur beim 1. Mal). -->
+                    <RadioButton x:Name="NavSettings" GroupName="MainNav" DockPanel.Dock="Bottom" Style="{StaticResource NavBtn}"
                                  Tag="⚙" Content="Eltern" Margin="10,0,10,14" Checked="Nav_Checked"/>
                 </DockPanel>
             </Border>
