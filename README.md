@@ -1,13 +1,33 @@
 # RunAsAdmin
 
-Kontrollierte, protokollierte Rechteerhöhung für Standardbenutzer unter Windows 11 –
-ein selbstgebauter Ersatz für Tools wie „Admin By Request", zugeschnitten auf zwei
-Kinder-PCs und Home Assistant.
+Kontrollierte, protokollierte **Adminrechte auf Zeit** für Standardbenutzer unter
+Windows 11 – ein selbstgebauter Ersatz für Tools wie „Admin By Request", gekoppelt
+an Home Assistant. Gedacht für Kinder-PCs: Die Kinder bleiben normale Benutzer und
+können bei Bedarf **15 Minuten Adminrechte anfragen**, die ein Elternteil per Handy
+freigibt. Danach werden die Rechte automatisch wieder entzogen – und es wird
+protokolliert, welche Programme in der Zeit mit Adminrechten liefen.
 
-**Idee:** Die Kinder bleiben Standardbenutzer. Ein Dienst (läuft als SYSTEM) startet
-auf Anforderung **nur freigegebene Programme** erhöht – bekannte Spiele sofort,
-alles andere erst nach deiner Freigabe per Handy (Home-Assistant-Push). Jede
-Anforderung wird protokolliert.
+> **Prinzip (MakeMeAdmin):** Statt einzelne Programme erhöht zu starten, wird das
+> Kind nach der Freigabe kurz **echtes Admin-Mitglied**. Es startet seine Programme
+> dann selbst (bei Bedarf mit einem UAC-Klick, den es nun bestätigen darf). Nach
+> Ablauf der Zeit wird es automatisch zurückgestuft.
+
+---
+
+## Ablauf
+
+1. Kind öffnet die **RunAsAdmin-App** (Tray-Symbol / Startmenü) und klickt
+   **„Adminrechte anfragen (15 Min)"**.
+2. Der Dienst schickt die Anfrage per Webhook an **Home Assistant** → du bekommst
+   eine **Push-Benachrichtigung** mit *Erlauben / Ablehnen*.
+3. Bei *Erlauben* nimmt der Dienst (läuft als SYSTEM) das Kind in die lokale
+   Administratorengruppe. Die App zeigt **„Du bist 15 Minuten Admin"** + Restzeit,
+   das Tray-Symbol wird grün.
+4. Das Kind startet seine Programme (Spiele, Updater …) **selbst**.
+5. Während der Zeit protokolliert der Dienst, welche Programme **tatsächlich
+   erhöht** (als Admin) liefen.
+6. Nach 15 Minuten: automatischer Entzug der Adminrechte. In Home Assistant
+   erscheint im Logbuch z. B. *„Admin-Zeit beendet – genutzt: Steam, …"*.
 
 ---
 
@@ -15,157 +35,100 @@ Anforderung wird protokolliert.
 
 | Teil | Projekt | Läuft wo |
 |------|---------|----------|
-| Dienst (nimmt Anfragen an, prüft, startet erhöht, protokolliert) | `src/RunAsAdmin.Service` | als SYSTEM auf jedem Kinder-PC |
-| Kinder-Tool / CLI (`runasadmin run "Steam"`) | `src/RunAsAdmin.Client` | als das Kind auf dem Kinder-PC |
-| Gemeinsames Modell, Dateiprüfung, Protokoll | `src/RunAsAdmin.Shared` | – |
-| Home-Assistant-Automationen | `homeassistant/` | dein HA-Server |
-| Raycast-Script-Command | `raycast/` | dein Windows-PC |
-
-## So funktioniert eine Anfrage
-
-1. Kind ruft `runasadmin run "Steam"` auf (Verknüpfung/Tray/Raycast).
-2. Client schickt die Anfrage über eine Named Pipe an den Dienst. Der Dienst
-   ermittelt den anfragenden Benutzer **aus der Pipe-Identität**, nicht aus dem Text.
-3. Dienst sucht die App in der Freigabeliste und **prüft die Datei** (Pfad +
-   optional Authenticode-Herausgeber und/oder SHA-256).
-4. `AutoApprove: true` → sofort starten. Sonst → Anfrage per Webhook an Home
-   Assistant, Push mit **Erlauben/Ablehnen**; deine Antwort geht an den lokalen
-   Listener des Dienstes zurück.
-5. Bei Freigabe startet der Dienst das Programm **erhöht in der Sitzung des Kindes**:
-   das Konto wird dafür nur für den Start-Moment in die lokale Administratorengruppe
-   genommen und sofort wieder entfernt. Das laufende Programm behält die Rechte.
-6. Alles landet im Protokoll (JSON-Datei + Windows-Ereignisprotokoll + HA-Logbuch).
+| **Dienst** (nimmt Anfragen an, verwaltet Admin-Zeit, protokolliert) | `src/RunAsAdmin.Service` | als SYSTEM auf jedem Kinder-PC |
+| **GUI** (Tray + Fenster: anfragen, Status, Verlauf, Einstellungen) | `src/RunAsAdmin.Gui` | als das Kind auf dem Kinder-PC |
+| **Installer** (Single-File-Setup, Deinstaller, Cleanup) | `src/RunAsAdmin.Installer` | einmal pro PC |
+| CLI (optional, für Skripte) | `src/RunAsAdmin.Client` | – |
+| Gemeinsames Modell, Verschlüsselung, Update | `src/RunAsAdmin.Shared` | – |
+| **Home Assistant** (Automationen, Dashboard) | `homeassistant/` | dein HA-Server |
 
 ---
 
-## Build & Installation (pro Kinder-PC)
+## Installation (pro Kinder-PC)
 
-Voraussetzung: .NET 8 SDK (nur zum Bauen). Auf den Kinder-PCs reicht die
-.NET-8-**Runtime**.
+Die Release-Dateien sind **self-contained** – es ist **kein** .NET nötig.
 
-```powershell
-# 1) Veröffentlichen
-.\install\Publish.ps1
+1. Aktuelles **`RunAsAdmin-Setup.zip`** von den
+   [Releases](https://github.com/Delido/makemeadmin/releases) herunterladen und
+   entpacken.
+2. **`RunAsAdmin-Setup.exe`** (auf der obersten Ebene) als Administrator ausführen.
+   Der Installer kopiert die Dateien, härtet die Berechtigungen (Kinder können
+   Konfiguration und Protokolle nicht ändern), legt das Tray-Autostart an,
+   registriert den Dienst als LocalSystem und setzt URL-Vorbehalte + Firewallregeln.
+3. **Einrichten (einmalig):** Tray-Symbol → *Einstellungen (Eltern)*:
+   Home-Assistant-Adresse, das Geheimnis (CallbackSecret) und eine **Eltern-PIN**
+   eintragen, „Home Assistant verwenden" anhaken.
 
-# 2) Konfiguration anpassen
-#    config\config.json: Programme, Pfade, HA-URL, CallbackSecret prüfen
-#    (config.json wurde mit einem Zufalls-Secret aus config.example.json erzeugt)
+> Bei Problemen mit einer alten Installation: `Cleanup.ps1` (im ZIP) als Admin
+> ausführen, ggf. neu starten, dann Setup erneut.
 
-# 3) Installieren (Administrator-PowerShell!)
-.\install\Install.ps1
-```
-
-Der Installer kopiert die Dateien, legt die Konfiguration unter
-`C:\ProgramData\RunAsAdmin` an, **härtet die Berechtigungen** (Kinder können
-Konfiguration und Protokolle nicht ändern), erstellt die Ereignisquelle, setzt
-die URL-Vorbehalte + Firewallregeln und registriert den Dienst als LocalSystem.
-
-### Verknüpfung für die Kinder
-
-Lege den Kindern z. B. Desktop-Verknüpfungen an:
-
-```
-"C:\Program Files\RunAsAdmin\Client\runasadmin.exe" run "Steam"
-```
+**Updates:** Die App prüft stündlich selbst auf neue Releases und spielt sie ein
+(nicht während einer aktiven Admin-Zeit). Manuell: in der App unter *Status* →
+„Nach Updates suchen".
 
 ---
 
-## Konfiguration (`config.json`)
+## Sicherheit
 
-```jsonc
-{
-  "HomeAssistant": {
-    "BaseUrl": "https://dein-ha.example.com",
-    "RequestWebhookId": "runasadmin_request",
-    "CallbackSecret": "<langes Zufallsgeheimnis>",
-    "CallbackPort": 8731          // Remote-Trigger läuft auf 8732
-  },
-  "AllowedApps": [
-    {
-      "Name": "Steam",
-      "Path": "C:\\Program Files (x86)\\Steam\\steam.exe",
-      "AutoApprove": true,            // sofort, nur protokolliert
-      "ExpectedPublisher": "Valve"    // Datei muss gültig von Valve signiert sein
-    },
-    {
-      "Name": "SignalRGB",
-      "Path": "...SignalRgbLauncher.exe",
-      "AutoApprove": false            // braucht deine Freigabe per Handy
-    }
-  ]
-}
-```
-
-**Unbekanntes Programm nachtragen:** neuen Eintrag in `AllowedApps` ergänzen und den
-Dienst neu starten (`Restart-Service RunAsAdmin`). Nur du als Admin kannst die Datei
-ändern.
+- **Geheimnisse verschlüsselt:** Das `CallbackSecret` wird mit Windows **DPAPI**
+  verschlüsselt gespeichert, nie im Klartext. Die Eltern-**PIN** liegt als
+  gesalzener Hash vor. Beides ist nur über die PIN-geschützten Einstellungen änderbar.
+- **Dieses Repo enthält keine persönlichen Daten** – keine HA-Adresse, kein Secret.
+  Du trägst diese nur lokal in der App ein.
+- **Gehärtete Rechte:** Konfiguration (`C:\ProgramData\RunAsAdmin\config.json`) und
+  Protokolle sind per ACL für die Kinder gesperrt.
+- **Zeitlich begrenzt:** Adminrechte werden nach 15 Minuten automatisch entzogen –
+  auch nach einem Dienst-Neustart wird eine verwaiste Mitgliedschaft aufgeräumt.
+- Die lokalen Listener sind per Firewallregel beschränkt.
 
 ---
 
 ## Home Assistant
 
-1. `homeassistant/configuration.snippet.yaml` → `rest_command` und den
-   `input_text`-Helfer übernehmen.
-2. `homeassistant/automation.yaml` → beide Automationen übernehmen und
-   `notify.mobile_app_DEIN_HANDY` auf dein echtes Gerät setzen.
-3. Webhook-ID und `CallbackSecret` müssen zur `config.json` passen.
+Im Ordner `homeassistant/`:
 
-Die Anfrage kommt per Webhook rein (nur aus dem Heimnetz, `local_only: true`),
-du bekommst eine Push mit Erlauben/Ablehnen, die Antwort geht per `rest_command`
-an `http://<Kinder-PC>:8731/decision/` zurück.
+1. **`configuration.snippet.yaml`** → `rest_command`, die `input_text`-Helfer und
+   `counter` übernehmen → **HA neu starten**.
+2. **`automation.yaml`** → die Automationen in `automations.yaml` übernehmen und
+   `notify.mobile_app_DEIN_HANDY` auf dein Gerät setzen → Automationen neu laden.
+3. **`dashboard.yaml`** → als neues Dashboard über den Raw-Editor einfügen
+   (Status, Statistik, Verlauf „wer / wann / was").
 
-> Hinweis für zwei PCs: Der Zwischenspeicher `input_text.runasadmin_last` hält nur
-> die *letzte* Anfrage. Kommen zwei Anfragen exakt gleichzeitig, kann das kollidieren.
-> Sauberer wäre je PC ein eigener Helfer oder der Umbau auf `response_variable`.
-
-## Raycast (dein Windows-PC)
-
-`raycast/runasadmin-trigger.ps1` als Script Command einbinden
-(Settings → Extensions → Script Commands → Add Script Directory).
-Vorher einmalig das Secret setzen:
-
-```powershell
-setx RUNASADMIN_SECRET "<dasselbe CallbackSecret>"
-```
-
-Dann in Raycast „Admin-Start auf Kinder-PC" → PC + App-Name wählen. Der Befehl
-ruft `http://<PC>:8732/trigger/` auf; dort greift dieselbe Freigabe-/Protokolllogik.
+Die Anfrage kommt per Webhook rein (nur aus dem Heimnetz, `local_only: true`), die
+Push bietet *Erlauben / Ablehnen*, die Entscheidung geht an den Rückkanal des PCs
+zurück (der Dienst nutzt dafür seine lokale IP). Ereignisse (Freigabe, Ablauf mit
+genutzten Programmen) landen im HA-Logbuch und in Zählern.
 
 ---
-
-## Sicherheitshinweise (wichtig)
-
-- **Keine vollen Admin-Sitzungen.** Es wird immer nur ein konkretes, freigegebenes
-  Programm gestartet. So kann niemand in einer offenen Admin-Sitzung Protokolle
-  löschen oder die Überwachung abschalten.
-- **Spielordner müssen für die Kinder schreibgeschützt sein**, wenn die Programm-EXE
-  erhöht gestartet wird. Sonst ließe sich die EXE gegen z. B. `cmd.exe` austauschen.
-  Für Steam/Epic liegen die Launcher in `Program Files` – dort haben Standardbenutzer
-  ohnehin keine Schreibrechte. Eigene/portable Programme prüfen.
-- **`ExpectedPublisher`/`ExpectedSha256` setzen**, wo möglich. Ohne diese greift nur
-  die Pfadprüfung; das wird im Protokoll vermerkt.
-- **Secret geheim halten.** Es schützt den Rückkanal (HA → Dienst) und den
-  Remote-Trigger (Raycast → Dienst). Nicht in Skripte schreiben, nur per Umgebungsvariable.
-- Die Listener sind per Firewallregel auf das **private** Netzwerkprofil beschränkt.
 
 ## Protokoll ansehen
 
-- Dateien: `C:\ProgramData\RunAsAdmin\logs\audit-JJJJ-MM-TT.jsonl` (eine JSON-Zeile je Ereignis).
-- Windows-Ereignisanzeige: Anwendung, Quelle `RunAsAdmin`.
-- In Home Assistant: Logbuch-Einträge der Automationen.
+- **Lokal (fälschungssicher):** `C:\ProgramData\RunAsAdmin\logs\audit-JJJJ-MM-TT.jsonl`
+  (eine JSON-Zeile je Ereignis) + Windows-Ereignisanzeige (Quelle `RunAsAdmin`).
+- **In Home Assistant:** Logbuch + Dashboard.
 
-Protokollierte Ereignisse u. a.: `request.received`, `request.verified`,
-`request.denied`, `approval.asked`, `launch.success`/`launch.failed`,
-`remote.trigger`.
+Wichtige Ereignisse: `timeadmin.granted`, `timeadmin.process` (nur erhöhte
+Programme), `timeadmin.revoked` (mit Programmliste), `timeadmin.denied`,
+`settings.saved`, `update.*`.
 
 ---
 
-## Was noch offen ist
+## Selbst bauen
 
-- **Tray-/GUI-Tool** statt Konsolen-CLI für die Kinder (bisher Verknüpfungen).
-- **Kindprozess-Protokollierung**: welche weiteren Programme ein erhöht gestartetes
-  Spiel selbst öffnet (z. B. über Windows-Prozessstart-Überwachung oder Sysmon).
-  Derzeit protokolliert der Dienst den Start, nicht die Kindprozesse.
-- **Echter Elevationstest** nur als installierter SYSTEM-Dienst möglich (die lokale
-  Konsole hat das nötige `SeTcbPrivilege` nicht).
+Voraussetzung: .NET 8 SDK.
+
+```powershell
+.\install\Publish.ps1    # baut Service/Client/GUI/Installer self-contained nach .\publish
 ```
+
+Die Versionsnummer wird zentral in `Directory.Build.props` gepflegt (gilt für alle
+Projekte, damit die Dateiversion jeder exe zum Release passt).
+
+---
+
+## Hinweise / Grenzen
+
+- **Ein UAC-Klick** kann je nach Programm nötig bleiben – das Kind kann ihn in der
+  Admin-Zeit aber selbst bestätigen (es braucht kein Eltern-Passwort).
+- Die „erhöht gelaufen?"-Erkennung fängt Programme, die ein Admin-Token haben;
+  je nach Spiel/Launcher kann die Liste nachjustiert werden.
