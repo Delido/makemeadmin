@@ -39,6 +39,11 @@ public sealed class Worker : BackgroundService
 
         log.Write("service.start", new { configPath = _configPath, apps = cfg.AllowedApps.Count });
 
+        // Selbstheilung: sicherstellen, dass SYSTEM die eigene config.json schreiben darf.
+        // Fruehere Installationen konnten eine zu strenge ACL hinterlassen -> dann
+        // schlaegt "Immer erlauben"/Einstellungen-Speichern mit "Access denied" fehl.
+        EnsureConfigWritable(_configPath, log);
+
         // Alte Protokolldateien aufräumen (älter als 90 Tage).
         TryRotateLogs(cfg.LogDirectory, keepDays: 90, log);
 
@@ -78,6 +83,52 @@ public sealed class Worker : BackgroundService
         finally
         {
             log.Write("service.stop", new { });
+        }
+    }
+
+    /// <summary>
+    /// Stellt sicher, dass das SYSTEM-Konto die config.json schreiben darf. Testet
+    /// mit einem Öffnen im Schreibmodus; schlägt das fehl, wird die ACL der Datei
+    /// zurückgesetzt (SYSTEM + Administratoren Vollzugriff). Der Dienst läuft als
+    /// SYSTEM und darf die ACL seiner eigenen Datei ändern.
+    /// </summary>
+    private static void EnsureConfigWritable(string configPath, AuditLog log)
+    {
+        try
+        {
+            if (!File.Exists(configPath)) return;
+            // Schreibtest.
+            try
+            {
+                using var fs = new FileStream(configPath, FileMode.Open, FileAccess.Write, FileShare.ReadWrite);
+                return; // schreibbar – nichts zu tun
+            }
+            catch (UnauthorizedAccessException) { /* ACL reparieren */ }
+
+            var fi = new FileInfo(configPath);
+            var sec = new System.Security.AccessControl.FileSecurity();
+            sec.SetAccessRuleProtection(true, false);
+            var system = new System.Security.Principal.SecurityIdentifier(
+                System.Security.Principal.WellKnownSidType.LocalSystemSid, null);
+            var admins = new System.Security.Principal.SecurityIdentifier(
+                System.Security.Principal.WellKnownSidType.BuiltinAdministratorsSid, null);
+            var users = new System.Security.Principal.SecurityIdentifier(
+                System.Security.Principal.WellKnownSidType.AuthenticatedUserSid, null);
+            sec.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+                system, System.Security.AccessControl.FileSystemRights.FullControl,
+                System.Security.AccessControl.AccessControlType.Allow));
+            sec.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+                admins, System.Security.AccessControl.FileSystemRights.FullControl,
+                System.Security.AccessControl.AccessControlType.Allow));
+            sec.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+                users, System.Security.AccessControl.FileSystemRights.Read,
+                System.Security.AccessControl.AccessControlType.Allow));
+            fi.SetAccessControl(sec);
+            log.Write("config.acl_repaired", new { configPath });
+        }
+        catch (Exception ex)
+        {
+            log.Write("config.acl_repair_failed", new { error = ex.Message });
         }
     }
 

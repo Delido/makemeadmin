@@ -483,28 +483,65 @@ public sealed class Elevator
     /// </summary>
     private static bool NetLocalGroupViaCmd(SecurityIdentifier sid, bool add, out string detail)
     {
+        // 'net localgroup' versteht KEINE "*SID"-Syntax (anders als icacls). Es braucht
+        // den GRUPPENNAMEN und einen aufloesbaren Kontonamen (DOMAIN\User) des Mitglieds.
+        var member = ResolveAccountName(sid) ?? sid.Value;   // Name bevorzugt, SID als Notnagel
+        var action = add ? "/add" : "/delete";
+        string lastErr = "";
+        foreach (var grp in AdminGroupNames())
+        {
+            try
+            {
+                var psi = new ProcessStartInfo("net.exe", $"localgroup \"{grp}\" \"{member}\" {action}")
+                {
+                    CreateNoWindow = true, UseShellExecute = false,
+                    RedirectStandardOutput = true, RedirectStandardError = true,
+                };
+                using var p = Process.Start(psi)!;
+                var outp = p.StandardOutput.ReadToEnd();
+                var err = p.StandardError.ReadToEnd();
+                p.WaitForExit(10000);
+                if (p.ExitCode == 0)
+                {
+                    detail = add ? $"Benutzer per 'net localgroup' in '{grp}' aufgenommen." : "entfernt";
+                    return true;
+                }
+                // "ist bereits Mitglied" (1378) bzw. "nicht Mitglied" (1377) = Ziel erreicht.
+                var combined = (outp + err).Trim();
+                if (combined.Contains("1378") || combined.Contains("1377")
+                    || combined.Contains("bereits", StringComparison.OrdinalIgnoreCase)
+                    || combined.Contains("already a member", StringComparison.OrdinalIgnoreCase))
+                {
+                    detail = add ? "Benutzer war bereits Mitglied." : "war nicht Mitglied.";
+                    return true;
+                }
+                lastErr = $"'{grp}' Exit {p.ExitCode}: {combined}";
+            }
+            catch (Exception ex) { lastErr = $"'{grp}' Fehler: {ex.Message}"; }
+        }
+        detail = $"'net localgroup' fehlgeschlagen. {lastErr}";
+        return false;
+    }
+
+    /// <summary>Löst eine SID in DOMAIN\User auf (für 'net localgroup'); null bei Fehler.</summary>
+    private static string? ResolveAccountName(SecurityIdentifier sid)
+    {
         try
         {
-            var groupSidArg = "*" + new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null).Value;
-            var memberArg = "*" + sid.Value;
-            var action = add ? "/add" : "/delete";
-            var psi = new ProcessStartInfo("net.exe", $"localgroup {groupSidArg} {memberArg} {action}")
+            var bytes = new byte[sid.BinaryLength];
+            sid.GetBinaryForm(bytes, 0);
+            var name = new System.Text.StringBuilder(256);
+            var domain = new System.Text.StringBuilder(256);
+            int cchName = name.Capacity, cchDomain = domain.Capacity;
+            if (LookupAccountSid(null, bytes, name, ref cchName, domain, ref cchDomain, out _))
             {
-                CreateNoWindow = true, UseShellExecute = false,
-                RedirectStandardOutput = true, RedirectStandardError = true,
-            };
-            using var p = Process.Start(psi)!;
-            var err = p.StandardError.ReadToEnd();
-            p.WaitForExit(10000);
-            if (p.ExitCode == 0)
-            {
-                detail = add ? "Benutzer per 'net localgroup' aufgenommen." : "entfernt";
-                return true;
+                var d = domain.ToString();
+                var n = name.ToString();
+                return string.IsNullOrEmpty(d) ? n : $"{d}\\{n}";
             }
-            detail = $"'net localgroup' Exit {p.ExitCode}: {err.Trim()}";
-            return false;
         }
-        catch (Exception ex) { detail = $"'net localgroup' Fehler: {ex.Message}"; return false; }
+        catch { }
+        return null;
     }
 
     private static void RemoveFromAdministrators(SecurityIdentifier sid)

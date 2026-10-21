@@ -387,13 +387,15 @@ public sealed class RequestHandler
     /// </summary>
     private (bool Ok, string Message) TryLaunchViaTask(AllowedApp app)
     {
+        // Die Datei muss existieren – sonst kann weder Aufgabe angelegt noch gestartet werden.
+        if (string.IsNullOrWhiteSpace(app.Path) || !File.Exists(app.Path))
+            return (false, $"Programmdatei nicht gefunden: {app.Path}");
+
         var acct = GetActiveAccount();
-        if (acct is null) return (false, "kein aktiver Benutzer");
+        if (acct is null) return (false, "kein angemeldeter Benutzer gefunden");
 
-        var (ok, msg) = _taskLauncher.Launch(app);
-        if (ok) return (true, msg);
-
-        // Aufgabe evtl. noch nicht vorhanden -> einmalig anlegen und erneut starten.
+        // Aufgabe immer zuerst anlegen/aktualisieren (idempotent, /F), dann starten.
+        // So ist der Pfad/Account stets aktuell und eine fehlende Aufgabe kein Problem.
         var (regOk, regMsg) = _taskLauncher.Register(app, acct);
         if (!regOk) return (false, regMsg);
         return _taskLauncher.Launch(app);

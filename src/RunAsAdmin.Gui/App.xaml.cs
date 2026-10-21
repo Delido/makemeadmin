@@ -13,6 +13,27 @@ public partial class App : System.Windows.Application
 
     private void App_Startup(object sender, StartupEventArgs e)
     {
+        // Fehler sichtbar machen: unbehandelte Ausnahmen als Meldung zeigen, statt
+        // dass die GUI still abstürzt/einfriert. So sieht man beim Testen die Ursache.
+        DispatcherUnhandledException += (_, ex) =>
+        {
+            System.Windows.MessageBox.Show(
+                ex.Exception.ToString(), "RunAsAdmin – Fehler",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            ex.Handled = true;
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, ex) =>
+        {
+            try
+            {
+                System.Windows.MessageBox.Show(
+                    (ex.ExceptionObject as Exception)?.ToString() ?? "Unbekannter Fehler",
+                    "RunAsAdmin – schwerer Fehler",
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+            catch { }
+        };
+
         // Rechtsklick-Modus: "RunAsAdmin.Gui.exe --request <pfad>" -> nur den
         // Anfrage-Dialog zeigen, kein Tray, kein Hauptfenster.
         var reqIdx = Array.FindIndex(e.Args, a =>

@@ -125,6 +125,16 @@ public sealed class Installer
         Run("icacls", $"\"{DataDir}\" /grant:r \"*S-1-5-18:(OI)(CI)F\" \"*S-1-5-32-544:(OI)(CI)F\" \"*S-1-5-11:(OI)(CI)RX\"");
         Run("icacls", $"\"{LogDir}\" /inheritance:r");
         Run("icacls", $"\"{LogDir}\" /grant:r \"*S-1-5-18:(OI)(CI)F\" \"*S-1-5-32-544:(OI)(CI)F\"");
+
+        // WICHTIG: config.json EXPLIZIT fuer SYSTEM+Admins beschreibbar machen.
+        // Sonst kann der Dienst (SYSTEM) seine eigene Konfiguration nicht speichern
+        // (z. B. "Immer erlauben"/Einstellungen) – fruehere Laeufe konnten hier eine
+        // zu strenge ACL hinterlassen haben, die Vererbung allein nicht aufhebt.
+        if (File.Exists(ConfigDest))
+        {
+            Run("icacls", $"\"{ConfigDest}\" /inheritance:r");
+            Run("icacls", $"\"{ConfigDest}\" /grant:r \"*S-1-5-18:F\" \"*S-1-5-32-544:F\" \"*S-1-5-11:R\"");
+        }
         Step("Berechtigungen gehärtet (Kinder können Konfiguration/Protokolle nicht ändern).");
     }
 

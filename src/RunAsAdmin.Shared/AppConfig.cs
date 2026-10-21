@@ -73,7 +73,24 @@ public sealed class AppConfig
     {
         var dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        File.WriteAllText(path, JsonSerializer.Serialize(this, JsonOptions));
+        var json = JsonSerializer.Serialize(this, JsonOptions);
+        try
+        {
+            File.WriteAllText(path, json);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Der Dienst laeuft als SYSTEM und darf seine eigene Konfiguration immer
+            // schreiben. Falls eine zu strenge ACL das verhindert: Attribute loesen
+            // und ein zweites Mal versuchen (bewusst einfach gehalten, kein ACL-Umbau).
+            try
+            {
+                if (File.Exists(path))
+                    File.SetAttributes(path, FileAttributes.Normal);
+            }
+            catch { }
+            File.WriteAllText(path, json);
+        }
     }
 
     /// <summary>

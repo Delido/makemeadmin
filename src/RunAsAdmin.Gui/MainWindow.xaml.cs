@@ -41,7 +41,15 @@ public partial class MainWindow : Window
         {
             PageTitle.Text = "Start";
             NavStart.IsChecked = true;      // Settings öffnet ein eigenes Fenster
-            new SettingsWindow { Owner = this }.ShowDialog();
+            try
+            {
+                new SettingsWindow { Owner = this }.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show("Einstellungen konnten nicht geöffnet werden:\n\n" + ex,
+                    "RunAsAdmin", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
         }
     }
 
