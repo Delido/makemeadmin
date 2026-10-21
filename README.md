@@ -12,6 +12,11 @@ protokolliert, welche Programme in der Zeit mit Adminrechten liefen.
 > dann selbst (bei Bedarf mit einem UAC-Klick, den es nun bestätigen darf). Nach
 > Ablauf der Zeit wird es automatisch zurückgestuft.
 
+![RunAsAdmin – die App auf dem Kinder-PC](assets/screenshot.png)
+
+Die App auf dem Kinder-PC: Seitenleiste (Start · Verlauf · Status · Eltern),
+Statusanzeige und der Knopf „Adminrechte anfragen (15 Min)".
+
 ---
 
 ## Ablauf
