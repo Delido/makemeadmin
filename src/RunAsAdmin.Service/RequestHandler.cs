@@ -365,6 +365,8 @@ public sealed class RequestHandler
         }
 
         _log.Write("launch.admin_ready", new { requestId, app.Name, adminMinutes = AppAdminMinutes });
+        // Fuer Dashboard-Statistik ("Meistgespielte Spiele") + Verlauf ("... gestartet").
+        _log.Write("game.launched", new { game = app.Name, user = requestingUser });
         return new ElevationResponse
         {
             State = RequestState.Approved,
@@ -461,6 +463,8 @@ public sealed class RequestHandler
         }
 
         _log.Write("game.admin_ready", new { app.Name, adminMinutes = AppAdminMinutes });
+        // Fuer Dashboard-Statistik ("Meistgespielte Spiele") + Verlauf ("... gestartet").
+        _log.Write("game.launched", new { game = app.Name, user = requestingUser });
         // Der Client (GUI) startet das Programm selbst – Pfad + Args zurückgeben.
         return new ElevationResponse
         {

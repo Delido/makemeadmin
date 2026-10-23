@@ -247,6 +247,10 @@ public sealed class TimeAdminManager : IDisposable
             WriteState();
 
             _log.Write("applaunch.admin_granted", new { appName, minutes, user = user.Value.Full, detail, expectedExe = exe });
+            // Auch als echte Admin-Zeit melden, damit das Add-on-Dashboard eine Session
+            // anlegt ("Admin-Zeiten pro Tag"). Beendet wird sie durch timeadmin.revoked
+            // (mit der Liste der erhoeht gestarteten Programme -> "Meistgenutzte Admin-Programme").
+            _log.Write("timeadmin.granted", new { user = user.Value.Full, minutes, reason = $"App-Start: {appName}" });
             StartProcessWatch(user.Value.Account);
             _timer = new Timer(_ => Revoke("applaunch_timeout"), null,
                 TimeSpan.FromMinutes(minutes), Timeout.InfiniteTimeSpan);
