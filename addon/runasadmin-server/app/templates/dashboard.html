@@ -55,6 +55,11 @@
     @media(max-width:760px){ .grid{ grid-template-columns:1fr; } body{padding:16px;} }
 
     /* Verlauf */
+    .scroll { max-height:360px; overflow-y:auto; margin:-4px -6px -4px 0; padding:4px 10px 4px 0;
+              scrollbar-width:thin; scrollbar-color:var(--stroke2) transparent; }
+    .scroll::-webkit-scrollbar { width:8px; }
+    .scroll::-webkit-scrollbar-thumb { background:var(--stroke2); border-radius:8px; }
+    .scroll::-webkit-scrollbar-track { background:transparent; }
     .ev { display:flex; align-items:flex-start; gap:12px; padding:9px 0;
           border-bottom:1px solid var(--stroke); font-size:13.5px; }
     .ev:last-child { border-bottom:none; }
@@ -246,6 +251,7 @@
   <div class="card">
     <h2>Verlauf</h2>
     {% if events %}
+      <div class="scroll">
       {% for e in events %}
       <div class="ev">
         <span class="ic">{{ e.icon }}</span>
@@ -255,6 +261,7 @@
         </div>
       </div>
       {% endfor %}
+      </div>
     {% else %}
       <div class="empty">Noch keine Ereignisse.</div>
     {% endif %}
