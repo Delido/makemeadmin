@@ -262,7 +262,8 @@ async def api_cancel_status(req: Request):
     data = await req.json()
     check_token(data.get("Token"))
     computer = data.get("Computer", "?")
-    db.seen(computer)
+    # Der Poll traegt die Client-Version mit -> Geraete-Uebersicht aktuell halten.
+    db.seen(computer, data.get("Version"))
     return {"cancel": db.take_cancel(computer)}
 
 
@@ -343,6 +344,7 @@ async def dashboard(request: Request):
     if not _authed(request):
         return RedirectResponse("login", status_code=303)
     return render("dashboard.html",
+        devices=_devices(),
         pending=db.pending_requests(),
         active=db.active_sessions(),
         events=_humanize(db.recent_events(40)),
@@ -354,6 +356,41 @@ async def dashboard(request: Request):
         notify_detail=request.query_params.get("detail", ""),
         notify_configured=bool(NOTIFY_SERVICE),
     )
+
+
+# PC gilt als online, wenn er sich in den letzten 60 s gemeldet hat (Poll-Intervall
+# ist deutlich kleiner). Danach "zuletzt gesehen vor ...".
+_ONLINE_WINDOW = 60
+
+
+def _devices():
+    """Geraete-Uebersicht: pro PC Version, online/zuletzt gesehen, Apps, aktive Admin-Zeit."""
+    now = int(time.time())
+    reg = db.registered_games()
+    active = {s["computer"] for s in db.active_sessions()}
+    out = []
+    for c in db.computers_list():
+        last = c.get("last_seen") or 0
+        secs = now - last
+        out.append({
+            "name": c["name"],
+            "version": c.get("version") or "?",
+            "online": secs <= _ONLINE_WINDOW,
+            "last_seen_text": _ago(secs) if last else "nie",
+            "apps": reg.get(c["name"], []),
+            "admin_active": c["name"] in active,
+        })
+    return out
+
+
+def _ago(secs: int) -> str:
+    if secs < 60:
+        return "gerade eben"
+    if secs < 3600:
+        return f"vor {secs // 60} Min"
+    if secs < 86400:
+        return f"vor {secs // 3600} Std"
+    return f"vor {secs // 86400} Tg"
 
 
 @app.post("/decide")

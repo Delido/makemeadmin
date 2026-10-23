@@ -18,6 +18,10 @@ public sealed class ServerApprover : IApprover
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
     private CancellationTokenSource? _cts;
 
+    // Laufende Dienst-Version (fuer die Geraete-Uebersicht im Dashboard).
+    private static readonly string _version =
+        System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "?";
+
     public ServerApprover(ServerConfig cfg, AuditLog log)
     {
         _cfg = cfg;
@@ -126,7 +130,8 @@ public sealed class ServerApprover : IApprover
 
             try
             {
-                var body = new { Token = _cfg.Token, Computer = Environment.MachineName };
+                // Version mitsenden -> Geraete-Uebersicht im Dashboard (Version/online).
+                var body = new { Token = _cfg.Token, Computer = Environment.MachineName, Version = _version };
                 using var content = new StringContent(AppConfig.SerializeCompact(body),
                     Encoding.UTF8, "application/json");
                 var resp = await _http.PostAsync(Url("/api/cancel-status"), content, ct);

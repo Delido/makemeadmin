@@ -9,7 +9,8 @@ DB_PATH = os.environ.get("RAA_DB", "/data/runasadmin.db")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS computers (
     name TEXT PRIMARY KEY,
-    last_seen INTEGER
+    last_seen INTEGER,
+    version TEXT
 );
 CREATE TABLE IF NOT EXISTS requests (
     id TEXT PRIMARY KEY,
@@ -76,15 +77,37 @@ def init():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with conn() as c:
         c.executescript(SCHEMA)
+        # Migration: 'version'-Spalte nachruesten, falls die DB aelter ist.
+        cols = [r["name"] for r in c.execute("PRAGMA table_info(computers)").fetchall()]
+        if "version" not in cols:
+            c.execute("ALTER TABLE computers ADD COLUMN version TEXT")
 
 
-def seen(computer: str):
+def seen(computer: str, version: str | None = None):
+    now = int(time.time())
     with conn() as c:
-        c.execute(
-            "INSERT INTO computers(name,last_seen) VALUES(?,?) "
-            "ON CONFLICT(name) DO UPDATE SET last_seen=excluded.last_seen",
-            (computer, int(time.time())),
-        )
+        if version:
+            c.execute(
+                "INSERT INTO computers(name,last_seen,version) VALUES(?,?,?) "
+                "ON CONFLICT(name) DO UPDATE SET last_seen=excluded.last_seen, "
+                "version=excluded.version",
+                (computer, now, version),
+            )
+        else:
+            c.execute(
+                "INSERT INTO computers(name,last_seen) VALUES(?,?) "
+                "ON CONFLICT(name) DO UPDATE SET last_seen=excluded.last_seen",
+                (computer, now),
+            )
+
+
+def computers_list():
+    """Alle bekannten PCs mit letztem Kontakt + gemeldeter Client-Version."""
+    with conn() as c:
+        rows = c.execute(
+            "SELECT name, last_seen, version FROM computers ORDER BY name"
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def add_request(rid, computer, user, reason):

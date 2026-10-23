@@ -75,6 +75,26 @@
     .app-row:last-child { border-bottom:none; }
 
     canvas { height:200px !important; max-height:200px; }
+
+    /* Geraete-Uebersicht */
+    .dev { display:flex; align-items:center; gap:13px; padding:12px 0;
+           border-bottom:1px solid var(--stroke); }
+    .dev:last-child { border-bottom:none; }
+    .dot { width:10px; height:10px; border-radius:50%; flex:none;
+           box-shadow:0 0 0 3px #ffffff0a; }
+    .dot.on  { background:var(--accent); box-shadow:0 0 0 3px #2fbf7126; }
+    .dot.off { background:var(--faint); }
+    .dev .main { flex:1; min-width:0; }
+    .dev .name { font-size:15px; font-weight:700; }
+    .dev .meta { color:var(--muted); font-size:12.5px; margin-top:3px; }
+    .badge { font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px;
+             letter-spacing:.02em; white-space:nowrap; }
+    .badge.ver   { background:#ffffff0d; color:var(--muted); border:1px solid var(--stroke2);
+                   font-variant-numeric:tabular-nums; }
+    .badge.admin { background:#3A2A16; color:var(--warn); border:1px solid #E0A33C44; }
+    .badge.on    { background:#16301F; color:var(--accent); border:1px solid #2FBF7144; }
+    .badge.off   { background:#ffffff08; color:var(--faint); border:1px solid var(--stroke); }
+    .dev .tags { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
   </style>
 </head>
 <body>
@@ -84,6 +104,31 @@
       <h1>RunAsAdmin</h1>
       <div class="sub">Zentrale Steuerung und Verlauf der Kinder-PCs</div>
     </div>
+  </div>
+
+  <div class="card">
+    <h2>Geräte</h2>
+    {% if devices %}
+      {% for d in devices %}
+      <div class="dev">
+        <span class="dot {{ 'on' if d.online else 'off' }}"></span>
+        <div class="main">
+          <div class="name">{{ d.name }}</div>
+          <div class="meta">
+            {% if d.online %}online{% else %}zuletzt gesehen {{ d.last_seen_text }}{% endif %}
+            · {{ d.apps|length }} App{{ '' if d.apps|length == 1 else 's' }} freigegeben
+          </div>
+        </div>
+        <div class="tags">
+          {% if d.admin_active %}<span class="badge admin">● Admin aktiv</span>{% endif %}
+          <span class="badge {{ 'on' if d.online else 'off' }}">{{ 'Online' if d.online else 'Offline' }}</span>
+          <span class="badge ver">v{{ d.version }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">Noch kein PC hat sich gemeldet.</div>
+    {% endif %}
   </div>
 
   <div class="card">
