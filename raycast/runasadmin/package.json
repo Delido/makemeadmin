@@ -1,0 +1,61 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "runasadmin",
+  "title": "RunAsAdmin",
+  "description": "Eltern-Werkzeug fuer RunAsAdmin: offene Admin-Anfragen der Kinder beantworten, Geraete sehen, Not-Aus und App-Freigaben verwalten.",
+  "icon": "command-icon.png",
+  "author": "sebastian_mendyka",
+  "license": "MIT",
+  "platforms": ["Windows", "macOS"],
+  "preferences": [
+    {
+      "name": "serverUrl",
+      "type": "textfield",
+      "required": true,
+      "title": "Server-URL",
+      "description": "Basis-URL des RunAsAdmin-Add-ons (ohne abschliessenden /). Zoraxy oder LAN.",
+      "default": "https://runasadmin.mendyka.dns.navy"
+    },
+    {
+      "name": "pcToken",
+      "type": "password",
+      "required": true,
+      "title": "pc_token",
+      "description": "Dasselbe Token wie in den Add-on-Optionen (pc_token)."
+    }
+  ],
+  "commands": [
+    {
+      "name": "requests",
+      "title": "Offene Anfragen",
+      "subtitle": "RunAsAdmin",
+      "description": "Offene Admin-Anfragen der Kinder beantworten (erlauben / immer / ablehnen).",
+      "mode": "view"
+    },
+    {
+      "name": "overview",
+      "title": "Geraete-Uebersicht",
+      "subtitle": "RunAsAdmin",
+      "description": "Kinder-PCs: online/offline, Version, freigegebene Apps, Admin-Status. Not-Aus und App entfernen.",
+      "mode": "view"
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^1.80.0",
+    "@raycast/utils": "^1.17.0"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^1.0.11",
+    "@types/node": "^20.8.10",
+    "@types/react": "^19.0.10",
+    "eslint": "^8.57.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.4.5"
+  },
+  "scripts": {
+    "build": "ray build -e dist",
+    "dev": "ray develop",
+    "lint": "ray lint",
+    "fix-lint": "ray lint --fix"
+  }
+}

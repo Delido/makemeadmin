@@ -115,6 +115,15 @@ def check_token(token: str | None):
         raise HTTPException(status_code=403, detail="Ungueltiges Token")
 
 
+def _check_parent(req: Request, data: dict | None = None):
+    """
+    Schutz der Eltern-API (Raycast). Token aus Body-Feld 'Token' (POST) ODER
+    Header 'X-RAA-Token' (GET). Nutzt dasselbe pc_token wie die Kinder-PCs.
+    """
+    token = (data or {}).get("Token") or req.headers.get("X-RAA-Token")
+    check_token(token)
+
+
 async def ha_notify(title: str, message: str, actions: list[dict] | None = None,
                     tag: str | None = None) -> tuple[bool, str]:
     """
@@ -439,3 +448,54 @@ async def test_notify(request: Request):
 @app.get("/api/health")
 async def health():
     return JSONResponse({"ok": True, "token_set": bool(PC_TOKEN)})
+
+
+# ---------------- Eltern-API (Raycast-Plugin) ----------------
+# JSON rein/raus, mit pc_token geschuetzt (Body 'Token' oder Header 'X-RAA-Token').
+# Spiegelt die Dashboard-Aktionen, aber ohne Cookie/Formular/Redirect.
+
+@app.get("/api/parent/overview")
+async def parent_overview(req: Request):
+    _check_parent(req)
+    return {
+        "devices": _devices(),
+        "pending": db.pending_requests(),
+        "active": db.active_sessions(),
+    }
+
+
+@app.post("/api/parent/decide")
+async def parent_decide(req: Request):
+    data = await req.json()
+    _check_parent(req, data)
+    rid = data.get("RequestId", "")
+    action = data.get("Action", "")
+    if action not in ("allow", "allow_always", "deny"):
+        raise HTTPException(status_code=400, detail="Action muss allow|allow_always|deny sein")
+    if not rid:
+        raise HTTPException(status_code=400, detail="RequestId fehlt")
+    db.decide(rid, action, "raycast")
+    return {"ok": True, "request_id": rid, "state": action}
+
+
+@app.post("/api/parent/cancel")
+async def parent_cancel(req: Request):
+    data = await req.json()
+    _check_parent(req, data)
+    computer = data.get("Computer", "")
+    if not computer:
+        raise HTTPException(status_code=400, detail="Computer fehlt")
+    db.request_cancel(computer)
+    return {"ok": True, "computer": computer}
+
+
+@app.post("/api/parent/remove")
+async def parent_remove(req: Request):
+    data = await req.json()
+    _check_parent(req, data)
+    computer = data.get("Computer", "")
+    game = data.get("Game", "")
+    if not computer or not game:
+        raise HTTPException(status_code=400, detail="Computer und Game noetig")
+    db.request_remove(computer, game)
+    return {"ok": True, "computer": computer, "game": game}
