@@ -78,7 +78,9 @@ public sealed class EventReporter : IDisposable
     {
         // Zusatzfelder, die das Add-on für Sitzungen/Statistik nutzt (User, Apps).
         string user = TryGet(data, "user") ?? TryGet(data, "requestingUser") ?? "";
-        string apps = TryGet(data, "apps") ?? "";
+        // Bevorzugt den fertigen Komma-String 'appsText' (timeadmin.revoked); das Feld
+        // 'apps' ist ein string[] und wuerde sonst als "System.String[]" landen.
+        string apps = TryGet(data, "appsText") ?? TryGet(data, "apps") ?? "";
         var body = new
         {
             Token = _token,
@@ -93,12 +95,21 @@ public sealed class EventReporter : IDisposable
         await _http.PostAsync(_url, content);
     }
 
-    /// <summary>Liest ein Feld (case-insensitiv) aus einem anonymen Objekt, falls vorhanden.</summary>
+    /// <summary>
+    /// Liest ein Feld (case-insensitiv) aus einem anonymen Objekt, falls vorhanden.
+    /// Sammlungen (z. B. string[]) werden zu einem Komma-String zusammengefügt, damit
+    /// nicht "System.String[]" nach außen geht.
+    /// </summary>
     private static string? TryGet(object data, string name)
     {
         var p = data.GetType().GetProperties()
             .FirstOrDefault(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
-        return p?.GetValue(data)?.ToString();
+        var val = p?.GetValue(data);
+        if (val is null) return null;
+        if (val is string s) return s;
+        if (val is System.Collections.IEnumerable en)
+            return string.Join(", ", en.Cast<object>().Select(o => o?.ToString() ?? ""));
+        return val.ToString();
     }
 
     public void Dispose() => _http.Dispose();

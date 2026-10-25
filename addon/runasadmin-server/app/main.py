@@ -509,3 +509,11 @@ async def parent_remove(req: Request):
         raise HTTPException(status_code=400, detail="Computer und Game noetig")
     db.request_remove(computer, game)
     return {"ok": True, "computer": computer, "game": game}
+
+
+@app.post("/api/parent/cleanup")
+async def parent_cleanup(req: Request):
+    """Einmalige Bereinigung alter Statistik-Daten (System.String[] / '?'-Spiele)."""
+    data = await req.json()
+    _check_parent(req, data)
+    return {"ok": True, **db.cleanup_stats()}

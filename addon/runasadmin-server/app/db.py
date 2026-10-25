@@ -299,3 +299,20 @@ def top_apps(days=30, limit=10):
             if a:
                 counts[a] = counts.get(a, 0) + 1
     return sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+
+
+def cleanup_stats():
+    """
+    Einmalige Bereinigung alter Statistik-Daten aus der Zeit vor dem Client-Fix:
+    - sessions.apps == 'System.String[]' -> leeren (kam vom falsch serialisierten string[])
+    - game_launches mit game '?' oder leer -> loeschen (Start ohne erkannten Namen)
+    Gibt an, wie viele Zeilen betroffen waren.
+    """
+    with conn() as c:
+        s = c.execute(
+            "UPDATE sessions SET apps=NULL WHERE apps LIKE 'System.String%'"
+        ).rowcount
+        g = c.execute(
+            "DELETE FROM game_launches WHERE game IS NULL OR game='' OR game='?'"
+        ).rowcount
+    return {"sessions_bereinigt": s, "game_launches_geloescht": g}
