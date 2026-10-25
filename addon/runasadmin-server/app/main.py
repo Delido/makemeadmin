@@ -6,7 +6,7 @@ import time
 
 import httpx
 from fastapi import FastAPI, Request, HTTPException, Form
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
 from jinja2 import Environment, FileSystemLoader
 
 from . import db
@@ -448,6 +448,16 @@ async def test_notify(request: Request):
 @app.get("/api/health")
 async def health():
     return JSONResponse({"ok": True, "token_set": bool(PC_TOKEN)})
+
+
+# Chart.js lokal ausliefern (same-origin) – ueber HA-Ingress/Zoraxy blockiert die
+# CSP externe CDN-Skripte, dann blieben die Diagramme leer. Datei liegt im Add-on.
+_CHARTJS = os.path.join(os.path.dirname(__file__), "static", "chart.umd.min.js")
+
+
+@app.get("/static/chart.js")
+async def chartjs():
+    return FileResponse(_CHARTJS, media_type="application/javascript")
 
 
 # ---------------- Eltern-API (Raycast-Plugin) ----------------
